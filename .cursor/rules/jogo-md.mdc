@@ -1,0 +1,12 @@
+---
+description: Atualizar JOGO.md quando as regras ou a interface do jogo mudarem
+alwaysApply: true
+---
+
+# JOGO.md acompanha o jogo
+
+`JOGO.md` na raiz é a descrição do que FENDA faz hoje.
+
+Quando uma mudança alterar regra, número, mapa, controle, poder, vitória, conta, sala ou interface visível, atualize `JOGO.md` na mesma entrega. Não deixe o arquivo descrevendo o comportamento antigo.
+
+Não atualize `JOGO.md` por refatoração que o jogador não percebe.

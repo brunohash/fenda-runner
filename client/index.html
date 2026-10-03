@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FENDA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=Outfit:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">FENDA</div>
+      <div id="timer" class="timer">3:00</div>
+      <div id="level" class="level"></div>
+      <div id="gate" class="gate" hidden>0/0 saíram</div>
+      <div id="shaman-name" class="alive" hidden></div>
+      <div id="alive" class="alive">sala</div>
+      <div id="roster" class="roster"></div>
+      <label id="room-field" class="room-field" hidden>
+        Sala
+        <input id="room-name" maxlength="24" spellcheck="false" autocomplete="off" value="Galeria" />
+      </label>
+      <button type="button" id="cast-open" class="ghost" hidden>Personagem</button>
+      <div id="status" class="status">conectando</div>
+    </header>
+    <main>
+      <div id="game"></div>
+      <section id="lobby">
+        <div class="intro">
+          <p class="kicker">depósito suspenso · até 10 operadores</p>
+          <h1>FENDA</h1>
+          <p class="lead">
+            Três minutos para chegar na porta, no alto do mapa. Cavar abre atalho e também derruba
+            quem vem atrás. O corte não acerta o painel sob os pés.
+          </p>
+          <div class="teach" aria-hidden="true">
+            <div class="runner"></div>
+            <div class="plates">
+              <i></i><i></i><i class="target"></i><i></i><i></i>
+            </div>
+          </div>
+          <p class="note">A porta fica em cima, sobre blocos que não se quebram. Cair no vão de baixo elimina.</p>
+        </div>
+        <form id="desk" class="desk">
+          <div class="auth-switch">
+            <button type="button" id="show-register" class="ghost">Criar conta</button>
+            <button type="button" id="show-login" class="ghost">Já tenho conta</button>
+          </div>
+          <label id="nick-field">
+            Apelido
+            <input id="nickname" name="nickname" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Operador" />
+          </label>
+          <label>
+            E-mail
+            <input id="email" name="email" type="email" maxlength="80" autocomplete="email" spellcheck="false" placeholder="voce@galeria.dev" />
+          </label>
+          <label>
+            Senha
+            <input id="password" name="password" type="password" maxlength="72" autocomplete="new-password" />
+          </label>
+          <label id="confirm-field">
+            Confirmar senha
+            <input id="confirm" name="confirm" type="password" maxlength="72" autocomplete="new-password" />
+          </label>
+          <p class="note">Escolha quem vai descer na galeria. Dá para trocar depois.</p>
+          <div id="cast-grid" class="cast-grid"></div>
+          <button type="submit" id="auth-submit">Criar conta e entrar</button>
+          <p id="error" class="error" hidden></p>
+        </form>
+        <p id="entering" class="lead" hidden>Entrando na sala…</p>
+      </section>
+      <div id="announce" hidden></div>
+      <div id="result" hidden>
+        <div class="result-card">
+          <p id="result-kicker"></p>
+          <h2 id="result-title"></h2>
+          <p id="result-names"></p>
+          <button type="button" id="again">Nova partida</button>
+        </div>
+      </div>
+      <ul id="feed"></ul>
+      <p id="notice" hidden></p>
+      <section id="cast" hidden>
+        <div class="cast-card">
+          <p class="kicker">operadores</p>
+          <h2>Escolha o personagem</h2>
+          <div id="cast-live" class="cast-grid"></div>
+          <button type="button" id="cast-close" class="ghost">Fechar</button>
+        </div>
+      </section>
+    </main>
+    <div class="dock">
+      <form id="chat" class="chat">
+        <ul id="chat-log"></ul>
+        <input id="chat-text" maxlength="48" autocomplete="off" spellcheck="true" placeholder="Falar na sala" disabled />
+      </form>
+      <aside id="powers" hidden>
+        <p id="powers-title">Poderes</p>
+        <div id="power-row"></div>
+        <div class="mana"><span id="mana-fill"></span></div>
+        <p id="mana-label">100/100</p>
+        <p id="power-tip">Escolha um poder, depois clique no bloco.</p>
+      </aside>
+    </div>
+    <footer>
+      <span>A D ← → mover</span>
+      <span>W ↑ subir</span>
+      <span>S ↓ cavar</span>
+      <span>X cava sem descer</span>
+      <span>na escada, ↑ sobe e ↓ desce; sem comando, cai</span>
+      <span>Shaman: poder, depois o bloco · ESC cancela</span>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
