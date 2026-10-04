@@ -3,10 +3,10 @@ import { BUBBLE_MAX_CHARS, PLAYER_H, PLAYER_W, SHAMAN_POWER_RANGE, TILE_SIZE } f
 import { Tile } from '@shared/map.ts'
 import { previewPower } from '@shared/shaman.ts'
 import { inspectDig } from '@shared/sim.ts'
-import { appearanceKey } from '@shared/shop.ts'
+import { roleGear } from '@shared/shop.ts'
 import type { PlayerSnap, TileChange } from '@shared/types.ts'
-import type { RunnerPose } from '@shared/characters.ts'
-import { ensureCharacter, ensureTextures } from '../art.ts'
+import { alienDisplay, alienFrameCount, type SpritePose } from '../alien.ts'
+import { ensureCharacter, ensurePlaceholder, ensureTextures } from '../art.ts'
 import { bridge, type SnapPayload } from '../state.ts'
 
 interface Actor {
@@ -19,13 +19,20 @@ interface Actor {
   look: string
 }
 
-function runnerPose(player: PlayerSnap): RunnerPose {
-  if (!player.alive) return 'idle'
+function runnerPose(player: PlayerSnap): SpritePose {
+  if (!player.alive) return 'dead'
   if (player.onBar) return 'hang'
   if (player.onLadder) return 'climb'
   if (!player.onGround) return 'fall'
-  if (Math.abs(player.vx) > 20 && Math.floor(performance.now() / 140) % 2 === 1) return 'step'
+  if (Math.abs(player.vx) > 20) return 'step'
   return 'idle'
+}
+
+function poseFrame(pose: SpritePose): number {
+  const count = alienFrameCount(pose)
+  if (count <= 1) return 0
+  const period = pose === 'idle' ? 280 : pose === 'step' ? 90 : 120
+  return Math.floor(performance.now() / period) % count
 }
 
 interface Bit {
@@ -56,7 +63,6 @@ export class ArenaScene extends Phaser.Scene {
   private serial = 0
   private tick = -1
   private dangerRow = 0
-  private skin = 'copper'
   private youId = ''
   private shake = 0
   private baseX = 0
@@ -65,6 +71,13 @@ export class ArenaScene extends Phaser.Scene {
 
   constructor() {
     super('arena')
+  }
+
+  preload(): void {
+    this.load.image('tile-grass', '/tile-grass.png')
+    this.load.image('tile-dirt', '/tile-dirt.png')
+    this.load.image('tile-foot', '/tile-foot.png')
+    this.load.image('tile-stone', '/tile-stone.png')
   }
 
   create(): void {
@@ -120,7 +133,6 @@ export class ArenaScene extends Phaser.Scene {
     this.height = match.height
     this.mapW = match.width * TILE_SIZE
     this.mapH = match.height * TILE_SIZE
-    this.skin = match.skin || 'copper'
     this.dangerRow = 0
     for (let r = 0; r < this.tiles.length; r++) {
       if (this.tiles[r].some((tile) => tile === Tile.Placa)) this.dangerRow = r
@@ -175,10 +187,8 @@ export class ArenaScene extends Phaser.Scene {
         : tile === Tile.Ladder
           ? 'ladder'
           : tile === Tile.Trava
-            ? 'trava'
-            : r >= this.dangerRow
-              ? `brick-${this.skin}-risco`
-              : `brick-${this.skin}`
+            ? 'tile-stone'
+            : this.placaTexture(c, r)
     let image = this.tileImages.get(key)
     if (!image) {
       image = this.add.image(c * TILE_SIZE, r * TILE_SIZE, texture).setOrigin(0, 0)
@@ -206,8 +216,10 @@ export class ArenaScene extends Phaser.Scene {
           if (prev === next) continue
           this.tiles[r][c] = next
           this.paintCell(c, r, next, next === Tile.Empty ? 'open' : 'solid')
+          this.repaintPlate(c, r - 1)
+          this.repaintPlate(c, r + 1)
           if ((prev === Tile.Placa || prev === Tile.Ladder) && next === Tile.Empty) {
-            this.burst(c, r, prev === Tile.Ladder ? 0xf0c14e : 0xe4895a)
+            this.burst(c, r, prev === Tile.Ladder ? 0xf0c14e : 0x6a4a32)
           }
         }
       }
@@ -218,7 +230,7 @@ export class ArenaScene extends Phaser.Scene {
       if (change.phase === 'reforming') this.paintCell(change.c, change.r, change.tile, 'reforming')
       else if (!grid?.length) {
         this.paintCell(change.c, change.r, change.tile, change.phase)
-        if (change.phase === 'open') this.burst(change.c, change.r, 0xe4895a)
+        if (change.phase === 'open') this.burst(change.c, change.r, 0x6a4a32)
       }
     }
     for (const event of snap.events) {
@@ -233,18 +245,14 @@ export class ArenaScene extends Phaser.Scene {
     for (const player of players) {
       seen.add(player.id)
       let actor = this.actors.get(player.id)
-      const gear = player.gear ?? []
-      const pose = runnerPose(player)
-      const look = `${appearanceKey(gear)}:${pose}`
-      const key = ensureCharacter(this, gear, pose)
       if (!actor) {
         const root = this.add.container(player.x, player.y)
         root.setDepth(10)
-        const shadow = this.add.ellipse(PLAYER_W / 2, PLAYER_H - 2, 16, 5, 0x000000, 0.4)
+        const shadow = this.add.ellipse(PLAYER_W / 2, PLAYER_H - 2, 18, 5, 0x000000, 0.4)
         const aura = this.add.ellipse(PLAYER_W / 2, PLAYER_H / 2, PLAYER_W + 14, PLAYER_H + 10, 0xffe14a, 0.35)
-        const sprite = this.add.image(PLAYER_W / 2, PLAYER_H / 2, key).setDisplaySize(PLAYER_W, PLAYER_H)
+        const sprite = this.add.image(PLAYER_W / 2, PLAYER_H, ensurePlaceholder(this)).setOrigin(0.5, 1)
         const label = this.add
-          .text(PLAYER_W / 2, -2, player.name, {
+          .text(PLAYER_W / 2, -20, player.name, {
             fontFamily: 'Outfit, sans-serif',
             fontSize: '12px',
             color: player.id === this.youId ? '#8cf0ff' : '#f4efe6',
@@ -252,14 +260,14 @@ export class ArenaScene extends Phaser.Scene {
           })
           .setOrigin(0.5, 1)
         const pin = this.add
-          .text(PLAYER_W / 2, -16, player.id === this.youId ? '▼' : '', {
+          .text(PLAYER_W / 2, -34, player.id === this.youId ? '▼' : '', {
             fontSize: '11px',
             color: '#8cf0ff',
             resolution: 2,
           })
           .setOrigin(0.5, 1)
         const bubble = this.add
-          .text(PLAYER_W / 2, -34, '', {
+          .text(PLAYER_W / 2, -48, '', {
             fontFamily: 'Outfit, sans-serif',
             fontSize: '13px',
             color: '#f4efe6',
@@ -273,14 +281,10 @@ export class ArenaScene extends Phaser.Scene {
           .setVisible(false)
         root.add([aura, shadow, sprite, label, pin, bubble])
         this.world.add(root)
-        actor = { root, sprite, label, pin, bubble, aura, look }
+        actor = { root, sprite, label, pin, bubble, aura, look: '' }
         this.actors.set(player.id, actor)
       }
-      if (actor.look !== look) {
-        actor.look = look
-        actor.sprite.setTexture(key)
-        actor.sprite.setDisplaySize(PLAYER_W, PLAYER_H)
-      }
+      this.applyLook(actor, player)
       const follow = player.id === this.youId ? 1 : 0.42
       actor.root.x += (player.x - actor.root.x) * follow
       actor.root.y += (player.y - actor.root.y) * follow
@@ -290,7 +294,7 @@ export class ArenaScene extends Phaser.Scene {
       actor.label.setColor(shaman ? '#ffe14a' : player.id === this.youId ? '#8cf0ff' : '#f4efe6')
       actor.pin.setText(shaman ? '✶' : player.id === this.youId ? '▼' : '')
       actor.pin.setColor(shaman ? '#ffe14a' : '#8cf0ff')
-      actor.root.setAlpha(player.alive ? 1 : 0.28)
+      actor.root.setAlpha(1)
       actor.root.setDepth(10 + player.y)
     }
     for (const [id, actor] of this.actors) {
@@ -301,19 +305,45 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  private placaTexture(c: number, r: number): string {
+    const holds = (tile: number | undefined) => tile === Tile.Placa || tile === Tile.Trava
+    if (!holds(this.tiles[r - 1]?.[c])) return 'tile-grass'
+    if (!holds(this.tiles[r + 1]?.[c])) return 'tile-foot'
+    return 'tile-dirt'
+  }
+
+  private repaintPlate(c: number, r: number): void {
+    if (this.tiles[r]?.[c] !== Tile.Placa) return
+    if (this.reforming.has(`${c},${r}`)) return
+    this.paintCell(c, r, Tile.Placa, 'solid')
+  }
+
+  private applyLook(actor: Actor, player: PlayerSnap): void {
+    const gear = roleGear(player.role)
+    const pose = runnerPose(player)
+    const frame = poseFrame(pose)
+    const look = `${player.role}:${pose}:${frame}`
+    if (actor.look === look) return
+    const key = ensureCharacter(this, gear, pose, frame)
+    if (!key) {
+      actor.look = ''
+      return
+    }
+    actor.look = look
+    const size = alienDisplay(pose, frame)
+    actor.sprite.setTexture(key)
+    actor.sprite.setOrigin(0.5, 1)
+    actor.sprite.setPosition(PLAYER_W / 2, PLAYER_H)
+    actor.sprite.setDisplaySize(size.w, size.h)
+  }
+
   private refreshPoses(): void {
     const players = bridge.snap?.players
     if (!players) return
     for (const player of players) {
       const actor = this.actors.get(player.id)
       if (!actor) continue
-      const gear = player.gear ?? []
-      const pose = runnerPose(player)
-      const look = `${appearanceKey(gear)}:${pose}`
-      if (actor.look === look) continue
-      actor.look = look
-      actor.sprite.setTexture(ensureCharacter(this, gear, pose))
-      actor.sprite.setDisplaySize(PLAYER_W, PLAYER_H)
+      this.applyLook(actor, player)
     }
   }
 

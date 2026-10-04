@@ -174,7 +174,7 @@ footer {
 #profile-mail, #profile-coins { margin: 0; }
 #profile-mail { color: var(--muted); font-size: 13px; }
 #profile-coins { color: #f0c14e; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; }
-#profile-face { image-rendering: pixelated; width: 44px; height: auto; }
+#profile-face { image-rendering: auto; width: 44px; height: auto; }
 .profile button { width: 100%; }
 
 .code-pill, .status {
@@ -309,14 +309,14 @@ body:has(#editor:not([hidden])) footer { display: none; }
 .gallery-floor i {
   width: 42px;
   height: 18px;
-  background:
-    linear-gradient(#ffb067, #e25a1c 42%, #8a2e0e);
-  box-shadow: inset 0 2px 0 #ffe0b8, inset 0 -3px 0 #5c1c08;
+  background: url('/tile-grass.png') center / cover;
+  image-rendering: pixelated;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
 }
 
 .gallery-floor i.stone {
-  background: linear-gradient(#2a4a86, #12306e 50%, #071433);
-  box-shadow: inset 0 2px 0 #9eb6e4;
+  background: url('/tile-stone.png') center / cover;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.35);
 }
 
 .gallery-floor {
@@ -585,7 +585,7 @@ body:has(#result:not([hidden])) main > *:not(#result) {
   font-size: 26px;
 }
 
-#card-face { image-rendering: pixelated; width: 44px; height: auto; }
+#card-face { image-rendering: auto; width: 44px; height: auto; }
 #card-stats {
   list-style: none;
   margin: 0;
@@ -784,7 +784,7 @@ body:has(#result:not([hidden])) main > *:not(#result) {
 .goods canvas {
   width: 36px;
   height: auto;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .goods b {
@@ -981,8 +981,16 @@ body:has(#result:not([hidden])) main > *:not(#result) {
   background: #071433;
 }
 
-#editor-grid .placa { background: linear-gradient(#ffb067, #e25a1c 55%, #8a2e0e); }
-#editor-grid .trava { background: linear-gradient(#2a4a86, #12306e); }
+#editor-grid .placa {
+  background: url('/tile-dirt.png') center / cover;
+  image-rendering: pixelated;
+}
+#editor-grid .placa.cap { background-image: url('/tile-grass.png'); }
+#editor-grid .placa.foot { background-image: url('/tile-foot.png'); }
+#editor-grid .trava {
+  background: url('/tile-stone.png') center / cover;
+  image-rendering: pixelated;
+}
 #editor-grid .ladder {
   background:
     linear-gradient(#f4fbff, #f4fbff) 4px 0 / 2px 100% no-repeat,

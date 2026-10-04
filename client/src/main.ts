@@ -1,6 +1,6 @@
 import { CHAT_MAX_CHARS, DOOR_RUSH_MS, SHAMAN_MAX_MANA } from '@shared/config.ts'
 import { POWER_DEFS, previewPower } from '@shared/shaman.ts'
-import { SHOP } from '@shared/shop.ts'
+import { roleGear } from '@shared/shop.ts'
 import type { ServerMessage, WalletView } from '@shared/protocol.ts'
 import { drawPowerGlyph } from './art.ts'
 import { mountEditor } from './editor.ts'
@@ -531,7 +531,7 @@ function paintCard(message: Extract<ServerMessage, { action: 'CARD' }>): void {
       return item
     }),
   )
-  drawPortrait(cardFace, message.gear, 4)
+  drawPortrait(cardFace, roleGear(message.role), 4)
 }
 
 function paintProfile(): void {
@@ -547,10 +547,9 @@ function paintProfile(): void {
   profileName.textContent = profile.nickname
   profileMail.textContent = profile.email
   profileCoins.textContent = `${wallet.coins} moeda${wallet.coins === 1 ? '' : 's'}`
-  const gearKey = wallet.equipped.slice().sort().join('+')
-  if (gearKey !== shownGear) {
-    shownGear = gearKey
-    drawPortrait(profileFace, wallet.equipped, 4)
+  if (shownGear !== 'base') {
+    shownGear = 'base'
+    drawPortrait(profileFace, [], 4)
   }
 }
 
@@ -592,49 +591,13 @@ function applyWallet(next: WalletView): void {
 }
 
 function buildShop(): void {
-  shopList.replaceChildren(
-    ...SHOP.map((item) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'goods'
-      button.dataset.id = item.id
-      const canvas = document.createElement('canvas')
-      drawPortrait(canvas, [item.id], 3)
-      const name = document.createElement('b')
-      name.textContent = item.name
-      const meta = document.createElement('span')
-      button.append(canvas, name, meta)
-      button.addEventListener('click', () => {
-        if (button.disabled) return
-        const owned = wallet.owned.includes(item.id)
-        net.send({ action: owned ? 'EQUIP' : 'BUY', id: item.id })
-      })
-      return button
-    }),
-  )
+  shopList.replaceChildren()
   paintShop()
 }
 
 function paintShop(): void {
   coinsLabel.textContent = `${wallet.coins} moeda${wallet.coins === 1 ? '' : 's'}`
-  for (const button of shopList.querySelectorAll<HTMLButtonElement>('.goods')) {
-    const item = SHOP.find((entry) => entry.id === button.dataset.id)
-    if (!item) continue
-    const owned = wallet.owned.includes(item.id)
-    const wearing = wallet.equipped.includes(item.id)
-    const broke = !owned && wallet.coins < item.price
-    button.disabled = broke
-    button.classList.toggle('on', wearing)
-    const meta = button.querySelector('span')
-    if (meta) {
-      meta.textContent = wearing ? 'Equipado' : owned ? 'Equipar' : `${item.price}`
-    }
-    button.title = wearing
-      ? `${item.blurb}\nClique para tirar`
-      : broke
-        ? `${item.blurb}\nMoedas insuficientes`
-        : item.blurb
-  }
+  shopList.replaceChildren()
 }
 
 function setAuthMode(next: boolean): void {

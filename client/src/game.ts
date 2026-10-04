@@ -10,6 +10,7 @@ export function mountGame(): Phaser.Game {
     parent: 'game',
     backgroundColor: '#10141b',
     banner: false,
+    pixelArt: true,
     scale: {
       mode: Phaser.Scale.RESIZE,
       width: 1280,

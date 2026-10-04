@@ -14,6 +14,7 @@ FENDA é uma arena 2D no navegador, para até 10 pessoas. O servidor decide o re
 - Até 10 jogadores na sala. A partida começa sozinha quando alguém entra.
 - Cinco segundos depois do fim, a próxima rodada começa se ainda houver alguém conectado. Quando a porta encerra a rodada, essa espera não existe.
 - Exatamente 1 Shaman e o restante são jogadores. O Shaman é um jogador físico: anda, cai, sobe escada, cava e pode ser eliminado. Ele só entra na porta quando não resta outro jogador vivo.
+- O operador é o alienígena verde. Parado, alterna o descanso. Andando, corre. Na escada e caindo, usa o pulo. Na linha, o corpo se inclina para a frente. Morto, fica deitado.
 - A fase jogável de fábrica é a **Claraboia**. Mapas aprovados no editor entram na mesma rotação. O nome aparece ao lado do relógio.
 
 ## Objetivo
@@ -48,8 +49,8 @@ Grade de 26 por 20 células. Cada célula tem 48 pixels. A câmera mostra o mapa
 | Tipo | O que faz |
 | --- | --- |
 | Vazio | Sem chão. |
-| Tijolo | Cava, o Shaman cria, destrói e fortifica. |
-| Estrutural | Não se cava e os poderes não o alteram. Rebite escuro. |
+| Tijolo | Terra. Se o vão de cima está livre, a grama cobre o topo. Se só o de baixo está livre, aparece a beira de baixo. Cava, o Shaman cria, destrói e fortifica. |
+| Estrutural | Pedra. Não se cava e os poderes não o alteram. |
 | Escada | Não é chão. Só sobe com cima e desce com baixo. O Shaman coloca um degrau num vão vazio. |
 | Linha | Não é chão. A pessoa se pendura e atravessa com esquerda e direita. Baixo solta. O Shaman estende uma linha num vão vazio. |
 
@@ -105,14 +106,14 @@ Se a queda elimina dentro de 5 segundos, o crédito é `PLAYER_DIG` ou `SHAMAN_P
 
 ## Interface
 
-- Antes da partida, a tela de conta ocupa a janela: o nome FENDA, a porta dourada no alto e o painel para criar conta ou entrar. O mapa é um vão azul, com tijolo laranja, escada clara e porta dourada. O topo, a coluna da direita e os controles aparecem depois que a sala abre.
+- Antes da partida, a tela de conta ocupa a janela: o nome FENDA, a porta dourada no alto e o painel para criar conta ou entrar. O mapa é um vão azul, com terra, pedra, escada clara e porta dourada. O topo, a coluna da direita e os controles aparecem depois que a sala abre.
 - O mapa ocupa a altura entre o topo e os controles. Chat, loja e poderes do Shaman ficam numa coluna à direita, para não comer a altura do jogo.
 - Em tela estreita, essa coluna desce para baixo do mapa.
 - Topo: tempo, nome da fase, quantos saíram, nome do Shaman, vivos, a lista da sala, **Mapas** e o apelido. Num mapa feito por jogador, o topo também mostra **por** e o apelido de quem criou. A fase de fábrica não tem autor. O apelido do canto abre a própria conta, com e-mail, moedas e **Sair da conta**.
 - Clicar num operador abre o perfil dele: retrato, papel nesta rodada e as estatísticas da conta. Partidas, saídas pela porta, vitórias, quedas, vezes como Shaman e moedas. O teste de mapa não entra nessa conta. O e-mail continua só na própria conta.
 - O nome da sala fica no topo. O padrão é `Galeria`.
 - Chat na coluna da direita, até 48 caracteres. A frase também aparece num balão sobre o personagem, até 32 caracteres, por cerca de 4,5 segundos.
-- Há um operador só. O corpo não se escolhe. Andar, subir, cair e se pendurar trocam a pose. O que muda de cor é o item equipado na loja.
+- Há um operador só. O corpo não se escolhe. Andar, subir, cair e se pendurar trocam a pose. O Shaman aparece com o casco de vinho. Os outros ficam no verde da folha.
 
 ## Mapas
 
@@ -124,19 +125,10 @@ Se a queda elimina dentro de 5 segundos, o crédito é `PLAYER_DIG` ou `SHAMAN_P
 
 ## Loja
 
-- A conta guarda moedas, o que já foi comprado, o que está equipado e as estatísticas. Isso continua depois que o servidor reinicia. A sessão, não.
+- A loja fica na coluna da direita, acima do chat, e está vazia. Não há item à venda.
+- A conta ainda guarda moedas e as estatísticas. Isso continua depois que o servidor reinicia. A sessão, não.
 - Sair pela porta rende 25 moedas. Cair no vão não rende.
-- A loja fica na coluna da direita, acima do chat, em uma grade de três itens por linha. Comprar gasta moedas e já equipa o item. Um clique no item equipado tira ele. Outro item do mesmo encaixe substitui o anterior.
-- O servidor recusa item desconhecido, compra repetida e moeda que não alcança o preço.
-
-| Item | Encaixe | Preço | O que muda |
-| --- | --- | --- | --- |
-| Viseira de cobre | viseira | 30 | A viseira fica cobre |
-| Viseira de musgo | viseira | 30 | A viseira fica verde |
-| Casco de brasa | casco | 50 | Corpo e capacete puxam para o cobre |
-| Casco de vinho | casco | 50 | O corpo fica vinho |
-| Lanterna | lanterna | 80 | Uma luz no alto do capacete |
-| Faixa de ouro | faixa | 40 | A faixa do peito fica dourada |
+- O Shaman usa o casco de vinho. Os outros operadores ficam no verde. Isso não depende da loja.
 
 ## Conta e sala
 

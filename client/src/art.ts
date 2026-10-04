@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
-import { characterById, type RunnerPose } from '@shared/characters.ts'
-import { resolveLook } from '@shared/shop.ts'
 import { PLAYER_H, PLAYER_W, TILE_SIZE } from '@shared/config.ts'
+import { alienCanvas, type SpritePose } from './alien.ts'
 
 const S = 2
 
@@ -166,30 +165,23 @@ export function drawPowerGlyph(canvas: HTMLCanvasElement, id: string): void {
   }
 }
 
-export function ensureCharacter(scene: Phaser.Scene, gear: string[], pose: RunnerPose = 'idle'): string {
-  const def = characterById('lume')
-  const look = resolveLook(gear)
-  const rows = def.poses[pose]
-  const key = `char-${def.id}-${pose}-${gear.slice().sort().join('+') || 'base'}`
+export function ensurePlaceholder(scene: Phaser.Scene): string {
+  const key = 'alien-pending'
   if (scene.textures.exists(key)) return key
   const g = gfx(scene)
-  const scale = 4
-  const width = rows[0].length * scale
-  const height = rows.length * scale
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const ink = look.ink[row[x] ?? '']
-      if (!ink) continue
-      g.fillStyle(Phaser.Display.Color.HexStringToColor(ink).color, 1)
-      g.fillRect(x * scale, y * scale, scale, scale)
-    }
-  })
-  for (const mark of look.marks) {
-    g.fillStyle(Phaser.Display.Color.HexStringToColor(mark.color).color, 1)
-    g.fillRect(mark.x * scale, mark.y * scale, scale, scale)
-  }
-  g.generateTexture(key, width, height)
+  g.fillStyle(0x9bd86a, 1)
+  g.fillCircle(8, 12, 7)
+  g.generateTexture(key, 16, 24)
   g.destroy()
+  return key
+}
+
+export function ensureCharacter(scene: Phaser.Scene, gear: string[], pose: SpritePose = 'idle', frame = 0): string | null {
+  const canvas = alienCanvas(pose, frame, gear)
+  if (!canvas) return null
+  const key = `alien-${pose}-${frame}-${gear.slice().sort().join('+') || 'base'}`
+  if (scene.textures.exists(key)) return key
+  scene.textures.addCanvas(key, canvas)
   return key
 }
 

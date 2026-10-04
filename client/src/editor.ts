@@ -279,7 +279,12 @@ export function mountEditor(hooks: {
       if (lockedCell(c, r)) cell.classList.add('locked')
       if (r > DRAFT_H - 4) cell.classList.add('abyss')
       if (exit && exit.c === c && exit.r === r) cell.classList.add('door')
-      else if (tile === Tile.Placa) cell.classList.add('placa')
+      else if (tile === Tile.Placa) {
+        cell.classList.add('placa')
+        const holds = (value: number | undefined) => value === Tile.Placa || value === Tile.Trava
+        if (!holds(tiles[r - 1]?.[c])) cell.classList.add('cap')
+        else if (!holds(tiles[r + 1]?.[c])) cell.classList.add('foot')
+      }
       else if (tile === Tile.Trava) cell.classList.add('trava')
       else if (tile === Tile.Ladder) cell.classList.add('ladder')
       else if (tile === Tile.Bar) cell.classList.add('linha')

@@ -25,7 +25,7 @@ export const SHOP: ShopItem[] = [
   {
     id: 'visor-cobre',
     name: 'Viseira de cobre',
-    blurb: 'A viseira fica da cor do tijolo.',
+    blurb: 'Os olhos ficam da cor do tijolo.',
     slot: 'visor',
     price: 30,
     ink: { c: '#e4895a' },
@@ -33,7 +33,7 @@ export const SHOP: ShopItem[] = [
   {
     id: 'visor-musgo',
     name: 'Viseira de musgo',
-    blurb: 'A viseira fica verde, como a Claraboia.',
+    blurb: 'Os olhos ficam verdes.',
     slot: 'visor',
     price: 30,
     ink: { c: '#8fd06a' },
@@ -41,7 +41,7 @@ export const SHOP: ShopItem[] = [
   {
     id: 'casco-brasa',
     name: 'Casco de brasa',
-    blurb: 'O corpo e o capacete puxam para o cobre.',
+    blurb: 'O corpo puxa para o cobre.',
     slot: 'shell',
     price: 50,
     ink: { b: '#8a3e28', d: '#3a2218' },
@@ -57,7 +57,7 @@ export const SHOP: ShopItem[] = [
   {
     id: 'lanterna',
     name: 'Lanterna',
-    blurb: 'Uma luz no alto do capacete.',
+    blurb: 'Uma luz na antena.',
     slot: 'lamp',
     price: 80,
     marks: [
@@ -78,6 +78,11 @@ export const SHOP: ShopItem[] = [
 
 export function itemById(id: string): ShopItem | null {
   return SHOP.find((item) => item.id === id) ?? null
+}
+
+/** O Shaman usa o casco de vinho. O restante fica no verde da folha. */
+export function roleGear(role: string | null | undefined): string[] {
+  return role === 'shaman' ? ['casco-vinho'] : []
 }
 
 export function appearanceKey(gear: string[]): string {

@@ -18,7 +18,7 @@ Abra [http://localhost:5173](http://localhost:5173). Crie uma conta (apelido, e-
 
 O chat, a loja e a paleta do Shaman ficam na coluna à direita do mapa. A frase também aparece num balão sobre o operador.
 
-Há um operador só. Sair pela porta rende moedas, e a loja nessa coluna vende viseira, casco, lanterna e faixa para ele.
+Há um operador só. O Shaman usa o casco de vinho e os outros ficam no verde. A loja nessa coluna está vazia. Sair pela porta rende moedas.
 
 As contas ficam em `server/data/users.json`. A sessão vale enquanto o servidor estiver no ar.
 
