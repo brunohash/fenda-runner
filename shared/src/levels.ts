@@ -12,7 +12,7 @@ const H = 20
  * Dá para chegar na porta pelas duas rotas sem o Shaman.
  */
 function makeLevels(): GameMap[] {
-  return [build('claraboia', 'Claraboia', 'moss', (pen) => {
+  return [build('claraboia', 'Claraboia', 'copper', (pen) => {
     pen.trava(3, 11, 20)
     pen.exit(13, 2)
 
@@ -49,7 +49,7 @@ function build(id: string, name: string, skin: string, draw: (pen: Pen) => void)
   const spawns: SpawnPoint[] = []
   const pen = new Pen(tiles, spawns)
   draw(pen)
-  const map: GameMap = { id, name, skin, width: W, height: H, tiles, spawns, exit: pen.door }
+  const map: GameMap = { id, name, authorName: '', skin, width: W, height: H, tiles, spawns, shamanSpawn: null, exit: pen.door }
   assertLevel(map)
   return map
 }

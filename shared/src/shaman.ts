@@ -1,18 +1,22 @@
 import {
   DESTROY_BLOCK_COST,
   FORTIFY_BLOCK_COST,
+  PLACE_BAR_COST,
+  PLACE_LADDER_COST,
   PLAYER_H,
   PLAYER_W,
   RESTORE_BLOCK_COST,
+  SHAMAN_BAR_COOLDOWN_MS,
   SHAMAN_DESTROY_COOLDOWN_MS,
   SHAMAN_FORTIFY_COOLDOWN_MS,
+  SHAMAN_LADDER_COOLDOWN_MS,
   SHAMAN_MAX_MANA,
   SHAMAN_POWER_RANGE,
   SHAMAN_RESTORE_COOLDOWN_MS,
   TILE_SIZE,
 } from './config.ts'
 import { Tile } from './map.ts'
-import { armDestroyBlock, fortifyCell, restoreCell, type SimPlayer, type SimState } from './sim.ts'
+import { armDestroyBlock, fortifyCell, hitRect, placeBar, placeLadder, restoreCell, type SimPlayer, type SimState } from './sim.ts'
 import type { Phase, Role } from './types.ts'
 
 export interface PowerRequest {
@@ -41,13 +45,14 @@ export interface AimContext {
   holes: { c: number; r: number }[]
   marks: { c: number; r: number }[]
   exit: { c: number; r: number } | null
+  bodies: { x: number; y: number; alive: boolean }[]
   caster: {
     x: number
     y: number
     mana: number
     alive: boolean
     role: Role
-    powerCooldownMs: { block: number; restore: number; fortify: number }
+    powerCooldownMs: { block: number; restore: number; fortify: number; ladder: number; bar: number }
   }
   phase: Phase
   power: string
@@ -56,7 +61,7 @@ export interface AimContext {
 }
 
 /**
- * Destroy, Restore e Fortify. Os próximos poderes entram aqui
+ * Destroy, Restore, Fortify e Escada. Os próximos poderes entram aqui
  * com validate, execute, mana, cooldown e alcance próprios.
  */
 const POWERS: Record<string, ShamanPower> = {
@@ -76,13 +81,13 @@ const POWERS: Record<string, ShamanPower> = {
   },
   restore: {
     id: 'restore',
-    name: 'Restaurar bloco',
-    summary: 'Fecha um buraco na hora.',
+    name: 'Criar bloco',
+    summary: 'Coloca um tijolo num vão vazio, se não houver ninguém.',
     manaCost: RESTORE_BLOCK_COST,
     cooldownMs: SHAMAN_RESTORE_COOLDOWN_MS,
     range: SHAMAN_POWER_RANGE,
     validate(sim, caster, request) {
-      return rejectRestore(sim, caster, request.c, request.r, this.range)
+      return rejectRestore(sim, sim.players, caster, request.c, request.r, this.range)
     },
     execute(sim, _caster, request) {
       restoreCell(sim, request.c ?? -1, request.r ?? -1)
@@ -100,6 +105,34 @@ const POWERS: Record<string, ShamanPower> = {
     },
     execute(sim, _caster, request) {
       fortifyCell(sim, request.c ?? -1, request.r ?? -1)
+    },
+  },
+  ladder: {
+    id: 'ladder',
+    name: 'Escada',
+    summary: 'Coloca um degrau num vão vazio com apoio.',
+    manaCost: PLACE_LADDER_COST,
+    cooldownMs: SHAMAN_LADDER_COOLDOWN_MS,
+    range: SHAMAN_POWER_RANGE,
+    validate(sim, caster, request) {
+      return rejectLadder(sim, caster, request.c, request.r, this.range)
+    },
+    execute(sim, _caster, request) {
+      placeLadder(sim, request.c ?? -1, request.r ?? -1)
+    },
+  },
+  bar: {
+    id: 'bar',
+    name: 'Linha',
+    summary: 'Estende uma linha para atravessar pendurado.',
+    manaCost: PLACE_BAR_COST,
+    cooldownMs: SHAMAN_BAR_COOLDOWN_MS,
+    range: SHAMAN_POWER_RANGE,
+    validate(sim, caster, request) {
+      return rejectBar(sim, caster, request.c, request.r, this.range)
+    },
+    execute(sim, _caster, request) {
+      placeBar(sim, request.c ?? -1, request.r ?? -1)
     },
   },
 }
@@ -124,7 +157,7 @@ export function assignRoles(sim: SimState, shamanId: string): void {
     const shaman = player.id === shamanId
     player.role = shaman ? 'shaman' : 'player'
     player.mana = shaman ? SHAMAN_MAX_MANA : 0
-    player.powerCooldownMs = { block: 0, restore: 0, fortify: 0 }
+    player.powerCooldownMs = { block: 0, restore: 0, fortify: 0, ladder: 0, bar: 0 }
     player.lastRelevant = null
     if (shaman) shamans += 1
   }
@@ -159,16 +192,18 @@ export function previewPower(ctx: AimContext): string | null {
   if (ctx.caster.role !== 'shaman' || !ctx.caster.alive) return 'Só o Shaman pode usar poderes'
   if (ctx.phase !== 'playing') return 'A rodada não está em andamento'
   if (ctx.caster.mana < power.manaCost) return 'Mana insuficiente'
-  const cooldown = ctx.caster.powerCooldownMs[power.id as 'block' | 'restore' | 'fortify'] ?? 0
+  const cooldown = ctx.caster.powerCooldownMs[power.id as keyof AimContext['caster']['powerCooldownMs']] ?? 0
   if (cooldown > 0) return 'Poder em recarga'
   const view: Pick<SimState, 'map' | 'holes' | 'marks'> = {
-    map: { id: '', name: '', skin: '', width: 0, height: 0, tiles: ctx.tiles, spawns: [], exit: ctx.exit },
+    map: { id: '', name: '', authorName: '', skin: '', width: 0, height: 0, tiles: ctx.tiles, spawns: [], shamanSpawn: null, exit: ctx.exit },
     holes: ctx.holes.map((hole) => ({ ...hole, destroyedAtMs: 0, phase: 'open' as const })),
     marks: ctx.marks.map((mark) => ({ ...mark, sourceId: '', blockId: '', warnUntilMs: 0 })),
   }
   const caster = { x: ctx.caster.x, y: ctx.caster.y } as SimPlayer
-  if (power.id === 'restore') return rejectRestore(view as SimState, caster, ctx.c, ctx.r, power.range)
+  if (power.id === 'restore') return rejectRestore(view as SimState, ctx.bodies, caster, ctx.c, ctx.r, power.range)
   if (power.id === 'fortify') return rejectFortify(view as SimState, caster, ctx.c, ctx.r, power.range)
+  if (power.id === 'ladder') return rejectLadder(view as SimState, caster, ctx.c, ctx.r, power.range)
+  if (power.id === 'bar') return rejectBar(view as SimState, caster, ctx.c, ctx.r, power.range)
   return rejectBlock(view as SimState, caster, ctx.c, ctx.r, power.range)
 }
 
@@ -182,12 +217,26 @@ function rejectBlock(sim: Pick<SimState, 'map' | 'marks' | 'holes'>, caster: { x
   return null
 }
 
-function rejectRestore(sim: Pick<SimState, 'map' | 'holes'>, caster: { x: number; y: number }, c?: number, r?: number, range = SHAMAN_POWER_RANGE): string | null {
+function rejectRestore(
+  sim: Pick<SimState, 'map'>,
+  bodies: { x: number; y: number; alive: boolean }[],
+  caster: { x: number; y: number },
+  c?: number,
+  r?: number,
+  range = SHAMAN_POWER_RANGE,
+): string | null {
   if (c === undefined || r === undefined) return 'Alvo fora do alcance'
   if (blockDistance(caster, c, r) > range) return 'Alvo fora do alcance'
   if (isExit(sim, c, r)) return 'A porta não pode ser alterada'
-  if (!sim.holes.some((hole) => hole.c === c && hole.r === r)) return 'Não há buraco aqui'
+  if (sim.map.tiles[r]?.[c] !== Tile.Empty) return 'Não há espaço aqui'
+  if (bodies.some((body) => body.alive && bodyInCell(body, c, r))) return 'Tem alguém nesse vão'
   return null
+}
+
+function bodyInCell(body: { x: number; y: number }, c: number, r: number): boolean {
+  const person = hitRect(body)
+  const tile = { x: c * TILE_SIZE, y: r * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE }
+  return person.x < tile.x + tile.w && person.x + person.w > tile.x && person.y < tile.y + tile.h && person.y + person.h > tile.y
 }
 
 function rejectFortify(sim: Pick<SimState, 'map' | 'marks'>, caster: { x: number; y: number }, c?: number, r?: number, range = SHAMAN_POWER_RANGE): string | null {
@@ -196,6 +245,24 @@ function rejectFortify(sim: Pick<SimState, 'map' | 'marks'>, caster: { x: number
   if (isExit(sim, c, r)) return 'A porta não pode ser alterada'
   if (sim.map.tiles[r]?.[c] !== Tile.Placa) return 'Esse bloco já é estrutura'
   if (sim.marks.some((mark) => mark.c === c && mark.r === r)) return 'Esse bloco já está marcado'
+  return null
+}
+
+function rejectBar(sim: Pick<SimState, 'map'>, caster: { x: number; y: number }, c?: number, r?: number, range = SHAMAN_POWER_RANGE): string | null {
+  if (c === undefined || r === undefined) return 'Alvo fora do alcance'
+  if (blockDistance(caster, c, r) > range) return 'Alvo fora do alcance'
+  if (isExit(sim, c, r)) return 'A porta não pode ser alterada'
+  if (sim.map.tiles[r]?.[c] !== Tile.Empty) return 'Não há espaço aqui'
+  return null
+}
+
+function rejectLadder(sim: Pick<SimState, 'map'>, caster: { x: number; y: number }, c?: number, r?: number, range = SHAMAN_POWER_RANGE): string | null {
+  if (c === undefined || r === undefined) return 'Alvo fora do alcance'
+  if (blockDistance(caster, c, r) > range) return 'Alvo fora do alcance'
+  if (isExit(sim, c, r)) return 'A porta não pode ser alterada'
+  if (sim.map.tiles[r]?.[c] !== Tile.Empty) return 'Não há espaço aqui'
+  const below = sim.map.tiles[r + 1]?.[c]
+  if (below !== Tile.Ladder && below !== Tile.Placa && below !== Tile.Trava) return 'A escada não tem apoio'
   return null
 }
 

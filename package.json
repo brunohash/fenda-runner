@@ -6,7 +6,7 @@
     "dev": "concurrently -n server,client -c cyan,magenta \"tsx watch server/src/index.ts\" \"vite\"",
     "dev:server": "tsx watch server/src/index.ts",
     "dev:client": "vite",
-    "test": "tsx shared/src/sim.test.ts && tsx shared/src/shaman.test.ts",
+    "test": "tsx shared/src/sim.test.ts && tsx shared/src/shaman.test.ts && tsx shared/src/shop.test.ts && tsx shared/src/draft.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

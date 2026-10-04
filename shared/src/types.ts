@@ -32,8 +32,12 @@ export interface SpawnPoint {
 export interface GameMap extends Grid {
   id: string
   name: string
+  /** Apelido de quem desenhou o mapa. Vazio na fase de fábrica. */
+  authorName: string
   skin: string
   spawns: SpawnPoint[]
+  /** Onde o Shaman começa. Vazio usa um nascimento comum. */
+  shamanSpawn: SpawnPoint | null
   /** Célula vazia da porta. O piso debaixo dela é estrutural. */
   exit: SpawnPoint | null
 }
@@ -44,6 +48,8 @@ export interface PlayerSnap {
   color: string
   variant: number
   characterId: string
+  /** Itens equipados. Mudam o desenho, não o corpo. */
+  gear: string[]
   role: Role
   mana: number
   x: number
@@ -54,9 +60,10 @@ export interface PlayerSnap {
   alive: boolean
   onGround: boolean
   onLadder: boolean
+  onBar: boolean
   digCooldownMs: number
   escaped: boolean
-  powerCooldownMs: { block: number; restore: number; fortify: number }
+  powerCooldownMs: { block: number; restore: number; fortify: number; ladder: number; bar: number }
 }
 
 export interface TileChange {
@@ -83,6 +90,7 @@ export type SimEvent =
   | { type: 'restored'; c: number; r: number }
   | { type: 'power'; playerId: string; power: string }
   | { type: 'escaped'; playerId: string }
+  | { type: 'door-held'; playerId: string }
   | { type: 'shaman-down'; killerId: string | null; cause: 'killed' | 'self' | 'disconnect' }
 
 export interface MatchResult {

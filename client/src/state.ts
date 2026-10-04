@@ -19,6 +19,7 @@ export const bridge: {
   snap: SnapPayload | null
   speech: SpeechLine[]
   castBlock: ((c: number, r: number) => void) | null
+  inspect: ((playerId: string) => void) | null
   selectedPower: string | null
 } = {
   youId: '',
@@ -29,5 +30,6 @@ export const bridge: {
   snap: null,
   speech: [],
   castBlock: null,
+  inspect: null,
   selectedPower: null,
 }

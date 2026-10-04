@@ -1,19 +1,30 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { isCharacterId } from '../../shared/src/characters.ts'
 import { sanitizeName } from '../../shared/src/protocol.ts'
+import { buyItem, equipItem, itemById, type Wallet } from '../../shared/src/shop.ts'
 
-export interface PublicUser {
+export interface PublicUser extends Wallet {
   id: string
   nickname: string
   email: string
   characterId: string
 }
 
+export interface Career {
+  rounds: number
+  escapes: number
+  wins: number
+  falls: number
+  shamanRounds: number
+}
+
+export type CareerField = keyof Career
+
 interface StoredUser extends PublicUser {
   salt: string
   hash: string
+  career: Career
 }
 
 const file = path.join(process.cwd(), 'server', 'data', 'users.json')
@@ -24,7 +35,7 @@ function load(): void {
   if (!existsSync(file)) return
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as StoredUser[]
-    if (Array.isArray(parsed)) users = parsed
+    if (Array.isArray(parsed)) users = parsed.map((user) => normalize(user))
   } catch {
     users = []
   }
@@ -41,8 +52,30 @@ function hashPassword(password: string, salt: string): Buffer {
   return scryptSync(password, salt, 32)
 }
 
+function normalize(user: StoredUser): StoredUser {
+  const owned = Array.isArray(user.owned) ? user.owned.filter((id) => itemById(id)) : []
+  const equipped = Array.isArray(user.equipped) ? user.equipped.filter((id) => owned.includes(id)) : []
+  return {
+    ...user,
+    characterId: 'lume',
+    coins: typeof user.coins === 'number' && user.coins >= 0 ? Math.floor(user.coins) : 0,
+    owned,
+    equipped,
+    career: readCareer(user.career),
+  }
+}
+
 function publicUser(user: StoredUser): PublicUser {
-  return { id: user.id, nickname: user.nickname, email: user.email, characterId: user.characterId }
+  const ready = normalize(user)
+  return {
+    id: ready.id,
+    nickname: ready.nickname,
+    email: ready.email,
+    characterId: ready.characterId,
+    coins: ready.coins,
+    owned: [...ready.owned],
+    equipped: [...ready.equipped],
+  }
 }
 
 export function registerAccount(nickname: string, email: string, password: string): { token: string; user: PublicUser } | { error: string } {
@@ -61,6 +94,10 @@ export function registerAccount(nickname: string, email: string, password: strin
     nickname: name,
     email: mail,
     characterId: 'lume',
+    coins: 0,
+    owned: [],
+    equipped: [],
+    career: blankCareer(),
     salt,
     hash: hashPassword(password, salt).toString('hex'),
   }
@@ -85,13 +122,76 @@ export function userFromToken(token: string): PublicUser | null {
   return user ? publicUser(user) : null
 }
 
-export function setCharacter(userId: string, characterId: string): PublicUser | { error: string } {
-  if (!isCharacterId(characterId)) return { error: 'Personagem desconhecido' }
+export function buyForUser(userId: string, itemId: string): PublicUser | { error: string } {
+  return changeWallet(userId, (wallet) => buyItem(wallet, itemId))
+}
+
+export function equipForUser(userId: string, itemId: string): PublicUser | { error: string } {
+  return changeWallet(userId, (wallet) => equipItem(wallet, itemId))
+}
+
+export function grantCoins(userId: string, amount: number): PublicUser | null {
   const user = users.find((item) => item.id === userId)
-  if (!user) return { error: 'Conta não encontrada' }
-  user.characterId = characterId
+  if (!user || amount <= 0) return user ? publicUser(user) : null
+  const ready = normalize(user)
+  ready.coins += amount
+  Object.assign(user, ready)
   save()
   return publicUser(user)
+}
+
+export function recordCareer(notes: { userId: string; field: CareerField }[]): void {
+  let dirty = false
+  for (const note of notes) {
+    const user = users.find((item) => item.id === note.userId)
+    if (!user) continue
+    const career = readCareer(user.career)
+    career[note.field] += 1
+    user.career = career
+    dirty = true
+  }
+  if (dirty) save()
+}
+
+export function careerOf(userId: string): { nickname: string; coins: number; equipped: string[]; career: Career } | null {
+  const user = users.find((item) => item.id === userId)
+  if (!user) return null
+  const ready = normalize(user)
+  return { nickname: ready.nickname, coins: ready.coins, equipped: [...ready.equipped], career: ready.career }
+}
+
+function blankCareer(): Career {
+  return { rounds: 0, escapes: 0, wins: 0, falls: 0, shamanRounds: 0 }
+}
+
+function readCareer(value: unknown): Career {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const num = (key: CareerField) => (typeof raw[key] === 'number' && (raw[key] as number) >= 0 ? Math.floor(raw[key] as number) : 0)
+  return {
+    rounds: num('rounds'),
+    escapes: num('escapes'),
+    wins: num('wins'),
+    falls: num('falls'),
+    shamanRounds: num('shamanRounds'),
+  }
+}
+
+function changeWallet(userId: string, apply: (wallet: Wallet) => string | null): PublicUser | { error: string } {
+  const user = users.find((item) => item.id === userId)
+  if (!user) return { error: 'Conta não encontrada' }
+  const wallet = normalize(user)
+  const error = apply(wallet)
+  if (error) return { error }
+  user.coins = wallet.coins
+  user.owned = wallet.owned
+  user.equipped = wallet.equipped
+  user.characterId = 'lume'
+  save()
+  return publicUser(user)
+}
+
+export function closeSession(token: string): void {
+  sessions.delete(token)
 }
 
 function openSession(userId: string): string {

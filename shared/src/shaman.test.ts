@@ -33,7 +33,7 @@ function pit(): SimState {
   for (let c = 1; c < width - 1; c++) tiles[4][c] = Tile.Placa
   tiles[3][3] = Tile.Ladder
   tiles[2][3] = Tile.Ladder
-  const sim = createSim({ id: 't', name: 't', skin: 'copper', width, height, tiles, spawns: [], exit: null }, defaultConfig())
+  const sim = createSim({ id: 't', name: 't', authorName: '', skin: 'copper', width, height, tiles, spawns: [], shamanSpawn: null, exit: null }, defaultConfig())
   sim.phase = 'playing'
   sim.countdownMs = 0
   return sim
@@ -48,7 +48,7 @@ function wide(): SimState {
     tiles[r][width - 1] = Tile.Trava
   }
   for (let c = 1; c < width - 1; c++) tiles[4][c] = Tile.Placa
-  const sim = createSim({ id: 't', name: 't', skin: 'copper', width, height, tiles, spawns: [], exit: null }, defaultConfig())
+  const sim = createSim({ id: 't', name: 't', authorName: '', skin: 'copper', width, height, tiles, spawns: [], shamanSpawn: null, exit: null }, defaultConfig())
   sim.phase = 'playing'
   sim.countdownMs = 0
   return sim
@@ -323,7 +323,7 @@ function gate(): SimState {
   tiles[3][3] = Tile.Ladder
   tiles[4][3] = Tile.Ladder
   const sim = createSim(
-    { id: 'porta', name: 'porta', skin: 'moss', width, height, tiles, spawns: [], exit: { c: 3, r: 1 } },
+    { id: 'porta', name: 'porta', authorName: '', skin: 'moss', width, height, tiles, spawns: [], shamanSpawn: null, exit: { c: 3, r: 1 } },
     defaultConfig(),
   )
   sim.phase = 'playing'
@@ -344,16 +344,67 @@ test('entrar na porta encerra a rodada de quem está sozinho', () => {
   assert.equal(sim.events.some((event) => event.type === 'escaped' && event.playerId === 'bruno'), true)
 })
 
-test('um escape não encerra a rodada enquanto outro ainda corre', () => {
+test('o shaman não entra na porta enquanto outro jogador ainda corre', () => {
   const sim = gate()
   const shaman = createPlayer({ id: 'bruno', name: 'bruno', color: '#fff', variant: 0, ...standOn(3, 2) })
   const outro = createPlayer({ id: 'ana', name: 'ana', color: '#fff', variant: 1, ...standOn(4, 5) })
   sim.players.push(shaman, outro)
   assignRoles(sim, 'bruno')
   stepSim(sim, 1000 / 60)
-  assert.equal(shaman.escaped, true)
-  assert.equal(outro.alive, true)
+  assert.equal(shaman.escaped, false)
+  assert.equal(shaman.alive, true)
   assert.equal(sim.phase, 'playing')
+  assert.ok(sim.timeLeftMs > 30000)
+  assert.equal(sim.events.some((event) => event.type === 'door-held' && event.playerId === 'bruno'), true)
+
+  sim.events.length = 0
+  stepSim(sim, 1000 / 60)
+  assert.equal(sim.events.some((event) => event.type === 'door-held'), false)
+
+  outro.alive = false
+  stepSim(sim, 1000 / 60)
+  assert.equal(shaman.escaped, true)
+  assert.equal(sim.phase, 'finished')
+  assert.deepEqual(sim.result?.winnerIds, ['bruno'])
+})
+
+test('um escape não encerra a rodada enquanto outro ainda corre', () => {
+  const sim = gate()
+  const shaman = createPlayer({ id: 'bruno', name: 'bruno', color: '#fff', variant: 0, ...standOn(4, 5) })
+  const outro = createPlayer({ id: 'ana', name: 'ana', color: '#fff', variant: 1, ...standOn(3, 2) })
+  sim.players.push(shaman, outro)
+  assignRoles(sim, 'bruno')
+  stepSim(sim, 1000 / 60)
+  assert.equal(outro.escaped, true)
+  assert.equal(shaman.alive, true)
+  assert.equal(sim.phase, 'playing')
+  assert.equal(sim.timeLeftMs, 30000)
+
+  sim.timeLeftMs = 8000
+  shaman.x = outro.x
+  shaman.y = outro.y
+  stepSim(sim, 1000 / 60)
+  assert.equal(shaman.escaped, true)
+  assert.ok(sim.timeLeftMs < 8000)
+  assert.ok(sim.timeLeftMs > 7000)
+})
+
+test('depois da porta, 30 segundos eliminam quem ficou', () => {
+  const sim = gate()
+  const primeiro = createPlayer({ id: 'ana', name: 'ana', color: '#fff', variant: 1, ...standOn(3, 2) })
+  const atras = createPlayer({ id: 'bruno', name: 'bruno', color: '#fff', variant: 0, ...standOn(4, 5) })
+  sim.players.push(primeiro, atras)
+  assignRoles(sim, 'bruno')
+  stepSim(sim, 1000 / 60)
+  assert.equal(sim.timeLeftMs, 30000)
+  let left = 30000
+  while (left > 0 && sim.phase === 'playing') {
+    stepSim(sim, 100)
+    left -= 100
+  }
+  assert.equal(sim.phase, 'finished')
+  assert.deepEqual(sim.result?.winnerIds, ['ana'])
+  assert.equal(atras.escaped, false)
 })
 
 test('fortificar impede cavar e o poder remoto', () => {
@@ -372,17 +423,68 @@ test('fortificar impede cavar e o poder remoto', () => {
   assert.equal(castPower(sim, 'bruno', { power: 'block', c: 5, r: 4 }), 'Esse bloco não pode ser removido')
 })
 
-test('restaurar só fecha um buraco', () => {
+test('criar bloco ocupa um vão vazio e também fecha buraco', () => {
   const sim = pit()
   const shaman = add(sim, 'bruno', 2)
   assignRoles(sim, 'bruno')
+  assert.equal(castPower(sim, 'bruno', { power: 'restore', c: 5, r: 3 }), null)
+  assert.equal(sim.map.tiles[3][5], Tile.Placa)
+  shaman.mana = SHAMAN_MAX_MANA
+  shaman.powerCooldownMs.restore = 0
+  const other = add(sim, 'ana', 4)
+  assert.equal(castPower(sim, 'bruno', { power: 'restore', c: 5, r: 3 }), 'Não há espaço aqui')
+  assert.equal(castPower(sim, 'bruno', { power: 'restore', c: 4, r: 3 }), 'Tem alguém nesse vão')
+  assert.equal(other.alive, true)
+  assert.equal(sim.map.tiles[3][4], Tile.Empty)
   shaman.digQueued = true
   stepSim(sim, 1000 / 60)
   assert.equal(sim.map.tiles[4][3], Tile.Empty)
-  assert.equal(castPower(sim, 'bruno', { power: 'restore', c: 4, r: 4 }), 'Não há buraco aqui')
+  shaman.mana = SHAMAN_MAX_MANA
+  shaman.powerCooldownMs.restore = 0
   assert.equal(castPower(sim, 'bruno', { power: 'restore', c: 3, r: 4 }), null)
   assert.equal(sim.map.tiles[4][3], Tile.Placa)
   assert.equal(sim.holes.some((hole) => hole.c === 3 && hole.r === 4), false)
+})
+
+test('a escada entra num vão apoiado e só dentro do alcance', () => {
+  const sim = pit()
+  const shaman = add(sim, 'bruno', 2)
+  assignRoles(sim, 'bruno')
+  assert.equal(castPower(sim, 'bruno', { power: 'ladder', c: 2, r: 1 }), 'A escada não tem apoio')
+  assert.equal(castPower(sim, 'bruno', { power: 'ladder', c: 2, r: 3 }), null)
+  assert.equal(sim.map.tiles[3][2], Tile.Ladder)
+  shaman.mana = SHAMAN_MAX_MANA
+  shaman.powerCooldownMs.ladder = 0
+  assert.equal(castPower(sim, 'bruno', { power: 'ladder', c: 2, r: 2 }), null)
+  assert.equal(sim.map.tiles[2][2], Tile.Ladder)
+  shaman.mana = SHAMAN_MAX_MANA
+  shaman.powerCooldownMs.ladder = 0
+  assert.equal(castPower(sim, 'bruno', { power: 'ladder', c: 3, r: 3 }), 'Não há espaço aqui')
+  const far = wide()
+  add(far, 'bruno', 2)
+  assignRoles(far, 'bruno')
+  assert.equal(castPower(far, 'bruno', { power: 'ladder', c: 16, r: 3 }), 'Alvo fora do alcance')
+  const door = pit()
+  door.map.exit = { c: 2, r: 3 }
+  add(door, 'bruno', 2)
+  assignRoles(door, 'bruno')
+  assert.equal(castPower(door, 'bruno', { power: 'ladder', c: 2, r: 3 }), 'A porta não pode ser alterada')
+})
+
+test('a linha entra num vão vazio e não precisa de apoio', () => {
+  const sim = pit()
+  const shaman = add(sim, 'bruno', 2)
+  assignRoles(sim, 'bruno')
+  assert.equal(castPower(sim, 'bruno', { power: 'bar', c: 2, r: 1 }), null)
+  assert.equal(sim.map.tiles[1][2], Tile.Bar)
+  shaman.mana = SHAMAN_MAX_MANA
+  shaman.powerCooldownMs.bar = 0
+  assert.equal(castPower(sim, 'bruno', { power: 'bar', c: 2, r: 1 }), 'Não há espaço aqui')
+  const door = pit()
+  door.map.exit = { c: 2, r: 3 }
+  add(door, 'bruno', 2)
+  assignRoles(door, 'bruno')
+  assert.equal(castPower(door, 'bruno', { power: 'bar', c: 2, r: 3 }), 'A porta não pode ser alterada')
 })
 
 if (failed > 0) {

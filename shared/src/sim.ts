@@ -1,6 +1,7 @@
 import {
   CLIMB_SPEED,
   DIG_COOLDOWN_MS,
+  DOOR_RUSH_MS,
   GRAVITY,
   HIT_W,
   MAX_FALL,
@@ -16,7 +17,7 @@ import {
   defaultConfig,
   type SimConfig,
 } from './config.ts'
-import { Tile, isLadder, isSolid, worldKillY } from './map.ts'
+import { Tile, isBar, isLadder, isSolid, worldKillY } from './map.ts'
 import type {
   Controls,
   DeathCause,
@@ -41,6 +42,7 @@ export interface SimPlayer {
   color: string
   variant: number
   characterId: string
+  gear: string[]
   role: Role
   mana: number
   x: number
@@ -52,6 +54,9 @@ export interface SimPlayer {
   escaped: boolean
   onGround: boolean
   onLadder: boolean
+  onBar: boolean
+  releasingBar: boolean
+  doorHeld: boolean
   digCooldownMs: number
   powerCooldownMs: Record<string, number>
   lastRelevant: { sourcePlayerId: string; actionType: KillCredit; blockId: string; atMs: number } | null
@@ -136,6 +141,7 @@ export function createPlayer(opts: {
   color: string
   variant: number
   characterId?: string
+  gear?: string[]
   x: number
   y: number
   facing?: Facing
@@ -146,6 +152,7 @@ export function createPlayer(opts: {
     color: opts.color,
     variant: opts.variant,
     characterId: opts.characterId ?? 'lume',
+    gear: opts.gear ? [...opts.gear] : [],
     role: 'player',
     mana: 0,
     x: opts.x,
@@ -157,8 +164,11 @@ export function createPlayer(opts: {
     escaped: false,
     onGround: false,
     onLadder: false,
+    onBar: false,
+    releasingBar: false,
+    doorHeld: false,
     digCooldownMs: 0,
-    powerCooldownMs: { block: 0, restore: 0, fortify: 0 },
+    powerCooldownMs: { block: 0, restore: 0, fortify: 0, ladder: 0, bar: 0 },
     lastRelevant: null,
     controls: idleControls(),
     digQueued: false,
@@ -226,6 +236,17 @@ function isSupported(p: { x: number; y: number }, map: Grid): boolean {
 
 function overlapsLadder(p: { x: number; y: number }, map: Grid): boolean {
   return cells(hitRect(p), map, isLadder).length > 0
+}
+
+function handSensor(p: { x: number; y: number }): Rect {
+  const body = hitRect(p)
+  return { x: body.x, y: body.y, w: body.w, h: 8 }
+}
+
+function barAtHands(p: { x: number; y: number }, map: Grid): number | null {
+  const hits = cells(handSensor(p), map, isBar)
+  if (!hits.length) return null
+  return Math.min(...hits.map((hit) => hit.r))
 }
 
 /**
@@ -437,19 +458,39 @@ export function destroyCell(
   return true
 }
 
-/** Fecha um buraco na hora. Quem estiver dentro fica preso. */
+/** Coloca um tijolo num vão vazio. Se havia buraco, ele fecha. Não cobre quem está no vão. */
 export function restoreCell(sim: SimState, c: number, r: number): boolean {
+  if (sim.map.exit?.c === c && sim.map.exit?.r === r) return false
+  if (sim.map.tiles[r]?.[c] !== Tile.Empty) return false
+  const tile: Rect = { x: c * TILE_SIZE, y: r * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE }
+  if (sim.players.some((player) => player.alive && rectsOverlap(hitRect(player), tile))) return false
   const index = sim.holes.findIndex((hole) => hole.c === c && hole.r === r)
-  if (index < 0 || sim.map.tiles[r]?.[c] !== Tile.Empty) return false
-  sim.holes.splice(index, 1)
+  if (index >= 0) sim.holes.splice(index, 1)
   sim.map.tiles[r][c] = Tile.Placa
   sim.tileChanges.push({ c, r, tile: Tile.Placa, phase: 'solid' })
   sim.events.push({ type: 'restored', c, r })
-  const tile: Rect = { x: c * TILE_SIZE, y: r * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE }
-  for (const player of sim.players) {
-    if (!player.alive) continue
-    if (rectsOverlap(hitRect(player), tile)) killPlayer(sim, player.id, 'buried')
-  }
+  return true
+}
+
+/** Coloca um degrau num vão vazio, se houver bloco, estrutura ou escada embaixo. */
+export function placeLadder(sim: SimState, c: number, r: number): boolean {
+  if (sim.map.exit?.c === c && sim.map.exit?.r === r) return false
+  if (sim.map.tiles[r]?.[c] !== Tile.Empty) return false
+  const below = sim.map.tiles[r + 1]?.[c]
+  if (below !== Tile.Ladder && below !== Tile.Placa && below !== Tile.Trava) return false
+  const hole = sim.holes.findIndex((item) => item.c === c && item.r === r)
+  if (hole >= 0) sim.holes.splice(hole, 1)
+  sim.map.tiles[r][c] = Tile.Ladder
+  sim.tileChanges.push({ c, r, tile: Tile.Ladder, phase: 'solid' })
+  return true
+}
+
+/** Estende uma linha num vão vazio. A pessoa se pendura e atravessa. */
+export function placeBar(sim: SimState, c: number, r: number): boolean {
+  if (sim.map.exit?.c === c && sim.map.exit?.r === r) return false
+  if (sim.map.tiles[r]?.[c] !== Tile.Empty) return false
+  sim.map.tiles[r][c] = Tile.Bar
+  sim.tileChanges.push({ c, r, tile: Tile.Bar, phase: 'solid' })
   return true
 }
 
@@ -593,16 +634,24 @@ function movePlayer(sim: SimState, player: SimPlayer, dt: number, suppressDown: 
   const ladder = overlapsLadder(player, sim.map)
   const ground = isSupported(player, sim.map)
   const descend = input.down && !suppressDown
+  const barRow = barAtHands(player, sim.map)
+  if (barRow === null) player.releasingBar = false
+  else if (descend && !(ladder && input.up)) player.releasingBar = true
+  const hang = barRow !== null && !player.releasingBar && !(ladder && (input.up || descend))
 
   if (ladder && input.up) player.vy = -CLIMB_SPEED
   else if (ladder && descend) player.vy = CLIMB_SPEED
-  else if (ground) player.vy = 0
+  else if (hang && barRow !== null) {
+    player.y = barRow * TILE_SIZE
+    player.vy = 0
+  } else if (ground) player.vy = 0
   else player.vy = Math.min(MAX_FALL, player.vy + GRAVITY * dt)
 
   player.y += player.vy * dt
   const landed = resolveY(player, sim.map)
   player.onGround = landed === 'floor' || isSupported(player, sim.map)
   player.onLadder = overlapsLadder(player, sim.map)
+  player.onBar = barAtHands(player, sim.map) !== null && !player.releasingBar
   if (player.onGround && player.vy > 0) player.vy = 0
 
   reachExit(sim, player)
@@ -613,11 +662,27 @@ function movePlayer(sim: SimState, player: SimPlayer, dt: number, suppressDown: 
   }
 }
 
+function othersRemain(sim: SimState, player: SimPlayer): boolean {
+  return sim.players.some((other) => other.id !== player.id && other.alive && !other.escaped)
+}
+
 function reachExit(sim: SimState, player: SimPlayer): void {
   const door = sim.map.exit
   if (!door || sim.phase !== 'playing' || !player.alive || player.escaped) return
   const rect: Rect = { x: door.c * TILE_SIZE, y: door.r * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE }
-  if (!rectsOverlap(hitRect(player), rect)) return
+  if (!rectsOverlap(hitRect(player), rect)) {
+    player.doorHeld = false
+    return
+  }
+  if (player.role === 'shaman' && othersRemain(sim, player)) {
+    if (!player.doorHeld) {
+      player.doorHeld = true
+      sim.events.push({ type: 'door-held', playerId: player.id })
+    }
+    return
+  }
+  player.doorHeld = false
+  const opening = !sim.players.some((other) => other.escaped)
   player.escaped = true
   player.alive = false
   player.vx = 0
@@ -625,6 +690,7 @@ function reachExit(sim: SimState, player: SimPlayer): void {
   player.digQueued = false
   player.controls = idleControls()
   sim.events.push({ type: 'escaped', playerId: player.id })
+  if (opening && sim.timeLeftMs > DOOR_RUSH_MS) sim.timeLeftMs = DOOR_RUSH_MS
 }
 
 function stepOnce(sim: SimState, dtMs: number): void {
@@ -696,6 +762,7 @@ export function snapshotPlayers(sim: SimState): PlayerSnap[] {
     color: p.color,
     variant: p.variant,
     characterId: p.characterId,
+    gear: [...p.gear],
     role: p.role,
     mana: Math.round(p.mana),
     x: round2(p.x),
@@ -706,12 +773,15 @@ export function snapshotPlayers(sim: SimState): PlayerSnap[] {
     alive: p.alive,
     onGround: p.onGround,
     onLadder: p.onLadder,
+    onBar: p.onBar,
     digCooldownMs: Math.round(p.digCooldownMs),
     escaped: p.escaped,
     powerCooldownMs: {
       block: Math.round(p.powerCooldownMs.block ?? 0),
       restore: Math.round(p.powerCooldownMs.restore ?? 0),
       fortify: Math.round(p.powerCooldownMs.fortify ?? 0),
+      ladder: Math.round(p.powerCooldownMs.ladder ?? 0),
+      bar: Math.round(p.powerCooldownMs.bar ?? 0),
     },
   }))
 }

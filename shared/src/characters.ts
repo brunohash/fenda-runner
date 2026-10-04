@@ -1,147 +1,111 @@
+export type RunnerPose = 'idle' | 'step' | 'climb' | 'hang' | 'fall'
+
 export interface CharacterDef {
   id: string
   name: string
   blurb: string
   ink: Record<string, string>
   rows: string[]
+  poses: Record<RunnerPose, string[]>
 }
 
+const idle = [
+  '..ddddddd..',
+  '.dcccccccd.',
+  '.dcooocccd.',
+  '.dcooocccd.',
+  '..ddddddd..',
+  '..bbbbbbb..',
+  '.bbcccccbb.',
+  '.bbcccccbb.',
+  '.bbcccccbb.',
+  '..bbkkbbb..',
+  '..bbkkbbb..',
+  '...b...b...',
+  '...b...b...',
+  '..bbb.bbb..',
+]
+
+const step = [
+  '..ddddddd..',
+  '.dcccccccd.',
+  '.dcooocccd.',
+  '.dcooocccd.',
+  '..ddddddd..',
+  '.bbbbbbbbb.',
+  '.bbcccccbb.',
+  '.bbcccccbb.',
+  '..bbkkbbb..',
+  '..b.kkbb...',
+  '.bb....b...',
+  'bb.........',
+  'b..........',
+  '..bb.......',
+]
+
+const climb = [
+  '..ddddddd..',
+  '.dcccccccd.',
+  '.dcooocccd.',
+  'b.dcoooccdb',
+  'b.dddddddb.',
+  'bbbbbbbbbbb',
+  '.bbcccccbb.',
+  '.bbcccccbb.',
+  '..bbkkbbb..',
+  '...bkk.b...',
+  '...b...b...',
+  '..bb...b...',
+  '.bb....bb..',
+  '...........',
+]
+
+const hang = [
+  'b.ddddddd.b',
+  'bdcccccccdb',
+  '.dcooocccd.',
+  '..ddddddd..',
+  '...bbbbb...',
+  '...bbbbb...',
+  '...bbkbb...',
+  '....b.b....',
+  '....b.b....',
+  '...bb.bb...',
+  '...........',
+  '...........',
+  '...........',
+  '...........',
+]
+
+const fall = [
+  '..ddddddd..',
+  '.dcccccccd.',
+  'bdcooocccdb',
+  '..ddddddd..',
+  'b.bbbbbbb.b',
+  '.bbcccccbb.',
+  '..bbkkbbb..',
+  '...b...b...',
+  '..b.....b..',
+  '.b.......b.',
+  'bb.......bb',
+  '...........',
+  '...........',
+  '...........',
+]
+
 /**
- * Personagens originais do jogo, em pixel art própria.
- * O id é o que uma loja futura precisa guardar na conta.
+ * Um operador só. O visual muda pelos itens da loja, não por outro corpo.
+ * O id `lume` continua na conta para as partidas já salvas.
  */
 export const CHARACTERS: CharacterDef[] = [
   {
     id: 'lume',
-    name: 'Lume',
-    blurb: 'Capacete curto e viseira azul.',
+    name: 'Operador',
+    blurb: 'O corpo da galeria. Capacete, viseira e faixa mudam na loja.',
     ink: { o: '#f0c7a8', d: '#18202b', c: '#39c6ef', b: '#123044', k: '#0c1016' },
-    rows: [
-      '..ddddddd..',
-      '.dcccccccd.',
-      '.dcooocccd.',
-      '.dcooocccd.',
-      '..ddddddd..',
-      '..bbbbbbb..',
-      '.bbcccccbb.',
-      '.bbcccccbb.',
-      '.bbcccccbb.',
-      '..bbkkbbb..',
-      '..bbkkbbb..',
-      '...b...b...',
-      '...b...b...',
-      '..bbb.bbb..',
-    ],
-  },
-  {
-    id: 'brasa',
-    name: 'Brasa',
-    blurb: 'Capuz redondo, cor de cobre.',
-    ink: { o: '#f0c7a8', d: '#2a140e', c: '#e4895a', b: '#8a3e28', k: '#1a0c08' },
-    rows: [
-      '...ddddd...',
-      '..dcccccd..',
-      '.dcccooccd.',
-      '.dccoooocd.',
-      '.dcccooccd.',
-      '..ddddddd..',
-      '.ccccccccc.',
-      '.ccccccccc.',
-      '.ccckkkccc.',
-      '..cckkkcc..',
-      '..cckkkcc..',
-      '...c...c...',
-      '...c...c...',
-      '..ccc.ccc..',
-    ],
-  },
-  {
-    id: 'nico',
-    name: 'Nico',
-    blurb: 'Antena no meio da cabeça.',
-    ink: { o: '#f0c7a8', d: '#14210f', c: '#7dff6b', a: '#d8ff6a', b: '#245c32', k: '#0c140c' },
-    rows: [
-      '.....a.....',
-      '.....d.....',
-      '..ddddddd..',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '.ddooooadd.',
-      '..ddddddd..',
-      '.bbbbbbbbb.',
-      '.bbcccccbb.',
-      '.bbckkkcbb.',
-      '..bbkkkbb..',
-      '...b...b...',
-      '...b...b...',
-      '..bbb.bbb..',
-    ],
-  },
-  {
-    id: 'voga',
-    name: 'Voga',
-    blurb: 'Boné largo e jaqueta ocre.',
-    ink: { o: '#e8b898', d: '#2a2416', c: '#f0c14e', b: '#8a6a22', k: '#1c160c' },
-    rows: [
-      '.ddddddddd.',
-      'ddddddddddd',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '..ddddddd..',
-      '..ccccccc..',
-      '.ccccccccc.',
-      '.ccckkkccc.',
-      '..cckkkcc..',
-      '..cckkkcc..',
-      '...c...c...',
-      '...b...b...',
-      '..bbb.bbb..',
-    ],
-  },
-  {
-    id: 'iris',
-    name: 'Iris',
-    blurb: 'Dois coques e casaco violeta.',
-    ink: { o: '#f0c7a8', d: '#24142c', c: '#c084fc', h: '#6b3d86', b: '#3a2458', k: '#140c18' },
-    rows: [
-      '.hh.....hh.',
-      '.hhdddddhh.',
-      '.ddddddddd.',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '..ddddddd..',
-      '.bbbbbbbbb.',
-      '.bbcccccbb.',
-      '.bbckkkcbb.',
-      '..bbkkkbb..',
-      '...b...b...',
-      '...b...b...',
-      '..ccc.ccc..',
-    ],
-  },
-  {
-    id: 'cabo',
-    name: 'Cabo',
-    blurb: 'Gola alta e faixa clara.',
-    ink: { o: '#f0c7a8', d: '#10141c', c: '#d7e2ea', b: '#3d4c5c', k: '#1a2330' },
-    rows: [
-      '..ddddddd..',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '.ddooooodd.',
-      '.ddddddddd.',
-      '..bbbbbbb..',
-      '.bbbbbbbbb.',
-      '.bbbcccbbb.',
-      '.bbbcccbbb.',
-      '..bbkkkbb..',
-      '..bbkkkbb..',
-      '...b...b...',
-      '...k...k...',
-      '..kkk.kkk..',
-    ],
+    rows: idle,
+    poses: { idle, step, climb, hang, fall },
   },
 ]
 
@@ -154,9 +118,12 @@ export function isCharacterId(id: string): boolean {
 }
 
 for (const character of CHARACTERS) {
-  const width = character.rows[0]?.length ?? 0
-  if (!character.rows.every((row) => row.length === width)) {
-    throw new Error(`Sprite irregular: ${character.id}`)
+  const frames = [character.rows, ...Object.values(character.poses)]
+  for (const pose of frames) {
+    const width = pose[0]?.length ?? 0
+    if (pose.length !== 14 || !pose.every((row) => row.length === width)) {
+      throw new Error(`Sprite irregular: ${character.id}`)
+    }
   }
 }
 

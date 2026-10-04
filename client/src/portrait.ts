@@ -1,7 +1,9 @@
-import { characterById, type CharacterDef } from '@shared/characters.ts'
+import { characterById } from '@shared/characters.ts'
+import { resolveLook } from '@shared/shop.ts'
 
-export function drawPortrait(canvas: HTMLCanvasElement, id: string, scale = 4): void {
-  const def = characterById(id)
+export function drawPortrait(canvas: HTMLCanvasElement, gear: string[] = [], scale = 3): void {
+  const def = characterById('lume')
+  const look = resolveLook(gear)
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const width = def.rows[0]?.length ?? 0
@@ -10,16 +12,16 @@ export function drawPortrait(canvas: HTMLCanvasElement, id: string, scale = 4): 
   canvas.height = height * scale
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.imageSmoothingEnabled = false
-  paint(ctx, def, scale)
-}
-
-function paint(ctx: CanvasRenderingContext2D, def: CharacterDef, scale: number): void {
   def.rows.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
-      const ink = def.ink[row[x] ?? '']
+      const ink = look.ink[row[x] ?? '']
       if (!ink) continue
       ctx.fillStyle = ink
       ctx.fillRect(x * scale, y * scale, scale, scale)
     }
   })
+  for (const mark of look.marks) {
+    ctx.fillStyle = mark.color
+    ctx.fillRect(mark.x * scale, mark.y * scale, scale, scale)
+  }
 }

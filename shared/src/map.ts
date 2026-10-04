@@ -6,6 +6,7 @@ export const Tile = {
   Trava: 1,
   Placa: 2,
   Ladder: 3,
+  Bar: 4,
 } as const
 
 export type TileId = (typeof Tile)[keyof typeof Tile]
@@ -16,6 +17,10 @@ export function isSolid(tile: number): boolean {
 
 export function isLadder(tile: number): boolean {
   return tile === Tile.Ladder
+}
+
+export function isBar(tile: number): boolean {
+  return tile === Tile.Bar
 }
 
 const WIDTH = 24
@@ -62,11 +67,13 @@ export function buildDrillRange(): GameMap {
   const map: GameMap = {
     id: 'galeria',
     name: 'Galeria Suspensa',
+    authorName: '',
     skin: 'copper',
     width: WIDTH,
     height: HEIGHT,
     tiles,
     spawns,
+    shamanSpawn: null,
     exit: null,
   }
   assertArena(map)
@@ -97,6 +104,7 @@ export function cloneMap(map: GameMap): GameMap {
     ...map,
     tiles: map.tiles.map((row) => row.slice()),
     spawns: map.spawns.map((s) => ({ ...s })),
+    shamanSpawn: map.shamanSpawn ? { ...map.shamanSpawn } : null,
     exit: map.exit ? { ...map.exit } : null,
   }
 }

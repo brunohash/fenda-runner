@@ -1,14 +1,15 @@
 import Phaser from 'phaser'
-import { characterById } from '@shared/characters.ts'
+import { characterById, type RunnerPose } from '@shared/characters.ts'
+import { resolveLook } from '@shared/shop.ts'
 import { PLAYER_H, PLAYER_W, TILE_SIZE } from '@shared/config.ts'
 
 const S = 2
 
 const SKINS = [
-  { id: 'copper', mortar: 0x24140e, brick: 0xc56a3a, light: 0xf2b48c, dark: 0x6d341c, risk: 0xb24b34, riskLight: 0xf09978, riskDark: 0x5e2416 },
-  { id: 'ash', mortar: 0x161a20, brick: 0x8b93a3, light: 0xd5dbe6, dark: 0x4a5260, risk: 0x9a5a48, riskLight: 0xe0b0a0, riskDark: 0x5a3028 },
-  { id: 'moss', mortar: 0x121910, brick: 0x6d8f5c, light: 0xc6e0a8, dark: 0x314828, risk: 0x8f5a32, riskLight: 0xe0b080, riskDark: 0x4a2c16 },
-  { id: 'wine', mortar: 0x1c1016, brick: 0xa85b6c, light: 0xf0c0c8, dark: 0x5e2c38, risk: 0xc45a3a, riskLight: 0xf0b090, riskDark: 0x6a2a1c },
+  { id: 'copper', mortar: 0x3a160c, brick: 0xe25a1c, light: 0xffc48a, dark: 0x8a2e0e, risk: 0xc42828, riskLight: 0xff8a72, riskDark: 0x6e1212 },
+  { id: 'ash', mortar: 0x10182e, brick: 0x2a4a86, light: 0x8eafd8, dark: 0x0c2048, risk: 0x8f3a28, riskLight: 0xe09070, riskDark: 0x4a1c12 },
+  { id: 'moss', mortar: 0x3a160c, brick: 0xd04e18, light: 0xffb067, dark: 0x7a280c, risk: 0xb02020, riskLight: 0xff7060, riskDark: 0x601010 },
+  { id: 'wine', mortar: 0x2a1018, brick: 0xa83a48, light: 0xf0a0a8, dark: 0x5e1c28, risk: 0xc45a3a, riskLight: 0xf0b090, riskDark: 0x6a2a1c },
 ]
 
 export function ensureTextures(scene: Phaser.Scene): void {
@@ -19,6 +20,7 @@ export function ensureTextures(scene: Phaser.Scene): void {
   }
   paintTrava(scene)
   paintLadder(scene)
+  paintBar(scene)
   paintDoor(scene)
 }
 
@@ -29,53 +31,65 @@ function gfx(scene: Phaser.Scene): Phaser.GameObjects.Graphics {
 function paintBrick(scene: Phaser.Scene, key: string, mortar: number, fill: number, light: number, dark: number): void {
   const g = gfx(scene)
   const size = TILE_SIZE * S
-  const gap = 2 * S
+  const seam = 3 * S
+  const rowH = (size - seam * 3) / 2
+  const brickW = (size - seam * 3) / 2
+  const half = (brickW - seam) / 2
+  const y2 = seam * 2 + rowH
   g.fillStyle(mortar, 1)
   g.fillRect(0, 0, size, size)
   g.fillStyle(fill, 1)
-  g.fillRect(gap, gap, size - gap * 2, size - gap * 2)
+  g.fillRect(seam, seam, brickW, rowH)
+  g.fillRect(seam * 2 + brickW, seam, brickW, rowH)
+  g.fillRect(seam, y2, half, rowH)
+  g.fillRect(seam * 2 + half, y2, brickW, rowH)
+  g.fillRect(seam * 3 + half + brickW, y2, half, rowH)
   g.fillStyle(light, 1)
-  g.fillRect(gap, gap, size - gap * 2, 4 * S)
-  g.fillRect(gap, gap, 3 * S, size - gap * 2)
+  const lip = 2 * S
+  g.fillRect(seam, seam, brickW, lip)
+  g.fillRect(seam * 2 + brickW, seam, brickW, lip)
+  g.fillRect(seam, y2, half, lip)
+  g.fillRect(seam * 2 + half, y2, brickW, lip)
+  g.fillRect(seam * 3 + half + brickW, y2, half, lip)
   g.fillStyle(dark, 1)
-  g.fillRect(gap, size - gap - 4 * S, size - gap * 2, 4 * S)
-  g.fillRect(size - gap - 3 * S, gap, 3 * S, size - gap * 2)
+  g.fillRect(seam, seam + rowH - lip, brickW, lip)
+  g.fillRect(seam * 2 + brickW, seam + rowH - lip, brickW, lip)
+  g.fillRect(seam, y2 + rowH - lip, half, lip)
+  g.fillRect(seam * 2 + half, y2 + rowH - lip, brickW, lip)
+  g.fillRect(seam * 3 + half + brickW, y2 + rowH - lip, half, lip)
   g.generateTexture(key, size, size)
   g.destroy()
 }
 
 function paintTrava(scene: Phaser.Scene): void {
-  const g = gfx(scene)
+  paintBrick(scene, 'trava', 0x071028, 0x16306a, 0x6e92c8, 0x0a1840)
+  const source = scene.textures.get('trava').getSourceImage()
+  if (!(source instanceof HTMLCanvasElement)) return
+  const ctx = source.getContext('2d')
+  if (!ctx) return
   const size = TILE_SIZE * S
-  const gap = 2 * S
-  g.fillStyle(0x141820, 1)
-  g.fillRect(0, 0, size, size)
-  g.fillStyle(0x3e4c5e, 1)
-  g.fillRect(gap, gap, size - gap * 2, size - gap * 2)
-  g.fillStyle(0x8ea0b4, 1)
-  g.fillRect(gap, gap, size - gap * 2, 3 * S)
-  g.fillStyle(0x24303c, 1)
-  g.fillRect(gap, size - gap - 3 * S, size - gap * 2, 3 * S)
-  g.fillStyle(0xd7fff6, 1)
-  g.fillCircle(size / 2, size / 2, 2.2 * S)
-  g.fillStyle(0x1a222c, 1)
-  g.fillCircle(size / 2, size / 2, 1 * S)
-  g.generateTexture('trava', size, size)
-  g.destroy()
+  ctx.fillStyle = '#d7e6ff'
+  ctx.beginPath()
+  ctx.arc(size / 2, size / 2, 4 * S, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#071028'
+  ctx.beginPath()
+  ctx.arc(size / 2, size / 2, 1.6 * S, 0, Math.PI * 2)
+  ctx.fill()
 }
 
 function paintDoor(scene: Phaser.Scene): void {
   const g = gfx(scene)
   const size = TILE_SIZE * S
-  g.fillStyle(0x2a2118, 1)
+  g.fillStyle(0x8a3a12, 1)
   g.fillRect(6 * S, 2 * S, 36 * S, 44 * S)
-  g.fillStyle(0x6a4328, 1)
+  g.fillStyle(0xffd27a, 1)
   g.fillRect(8 * S, 4 * S, 32 * S, 40 * S)
-  g.fillStyle(0xffe7a8, 0.95)
+  g.fillStyle(0xfff6c8, 1)
   g.fillRect(12 * S, 8 * S, 24 * S, 28 * S)
-  g.fillStyle(0xfff4d2, 1)
+  g.fillStyle(0xffffff, 1)
   g.fillRect(18 * S, 12 * S, 12 * S, 16 * S)
-  g.fillStyle(0xf0c14e, 1)
+  g.fillStyle(0xffe14a, 1)
   g.fillCircle(34 * S, 26 * S, 2 * S)
   g.generateTexture('door', size, size)
   g.destroy()
@@ -84,15 +98,26 @@ function paintDoor(scene: Phaser.Scene): void {
 function paintLadder(scene: Phaser.Scene): void {
   const g = gfx(scene)
   const size = TILE_SIZE * S
-  g.fillStyle(0xf0c14e, 1)
+  g.fillStyle(0xf4fbff, 1)
   g.fillRect(14 * S, 0, 3 * S, size)
   g.fillRect(size - 17 * S, 0, 3 * S, size)
-  g.fillStyle(0xffe3a1, 1)
+  g.fillStyle(0x9fdfff, 1)
   for (let i = 0; i < 4; i++) {
     const y = (6 + i * 12) * S
     g.fillRect(14 * S, y, size - 28 * S, 2.5 * S)
   }
   g.generateTexture('ladder', size, size)
+  g.destroy()
+}
+
+function paintBar(scene: Phaser.Scene): void {
+  const g = gfx(scene)
+  const size = TILE_SIZE * S
+  g.fillStyle(0xc9b27a, 1)
+  g.fillRect(0, 2 * S, size, 3 * S)
+  g.fillStyle(0xffe7b0, 1)
+  g.fillRect(0, 2 * S, size, S)
+  g.generateTexture('linha', size, size)
   g.destroy()
 }
 
@@ -105,6 +130,17 @@ export function drawPowerGlyph(canvas: HTMLCanvasElement, id: string): void {
   const px = (x: number, y: number, color: string, w = 1, h = 1) => {
     g.fillStyle = color
     g.fillRect(x * 2, y * 2, w * 2, h * 2)
+  }
+  if (id === 'ladder') {
+    px(4, 3, '#8fb56a', 1, 11)
+    px(11, 3, '#8fb56a', 1, 11)
+    for (let y = 4; y <= 12; y += 2) px(5, y, '#d7b27a', 6, 1)
+    return
+  }
+  if (id === 'bar') {
+    px(1, 7, '#c9b27a', 14, 2)
+    px(1, 7, '#ffe7b0', 14, 1)
+    return
   }
   const brick = id === 'fortify' ? '#3e4c5e' : '#c56a3a'
   const light = id === 'fortify' ? '#8ea0b4' : '#f2b48c'
@@ -130,22 +166,28 @@ export function drawPowerGlyph(canvas: HTMLCanvasElement, id: string): void {
   }
 }
 
-export function ensureCharacter(scene: Phaser.Scene, id: string): string {
-  const def = characterById(id)
-  const key = `char-${def.id}`
+export function ensureCharacter(scene: Phaser.Scene, gear: string[], pose: RunnerPose = 'idle'): string {
+  const def = characterById('lume')
+  const look = resolveLook(gear)
+  const rows = def.poses[pose]
+  const key = `char-${def.id}-${pose}-${gear.slice().sort().join('+') || 'base'}`
   if (scene.textures.exists(key)) return key
   const g = gfx(scene)
   const scale = 4
-  const width = def.rows[0].length * scale
-  const height = def.rows.length * scale
-  def.rows.forEach((row, y) => {
+  const width = rows[0].length * scale
+  const height = rows.length * scale
+  rows.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
-      const ink = def.ink[row[x] ?? '']
+      const ink = look.ink[row[x] ?? '']
       if (!ink) continue
       g.fillStyle(Phaser.Display.Color.HexStringToColor(ink).color, 1)
       g.fillRect(x * scale, y * scale, scale, scale)
     }
   })
+  for (const mark of look.marks) {
+    g.fillStyle(Phaser.Display.Color.HexStringToColor(mark.color).color, 1)
+    g.fillRect(mark.x * scale, mark.y * scale, scale, scale)
+  }
   g.generateTexture(key, width, height)
   g.destroy()
   return key

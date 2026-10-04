@@ -1,8 +1,9 @@
-import { CHARACTERS } from '@shared/characters.ts'
-import { CHAT_MAX_CHARS, SHAMAN_MAX_MANA } from '@shared/config.ts'
+import { CHAT_MAX_CHARS, DOOR_RUSH_MS, SHAMAN_MAX_MANA } from '@shared/config.ts'
 import { POWER_DEFS, previewPower } from '@shared/shaman.ts'
+import { SHOP } from '@shared/shop.ts'
+import type { ServerMessage, WalletView } from '@shared/protocol.ts'
 import { drawPowerGlyph } from './art.ts'
-import type { ServerMessage } from '@shared/protocol.ts'
+import { mountEditor } from './editor.ts'
 import { mountGame, refreshGame } from './game.ts'
 import { bindInput, readInput, releaseKeys, setArmed } from './input.ts'
 import { connectNet, type Net } from './net.ts'
@@ -19,8 +20,15 @@ const alive = document.querySelector<HTMLElement>('#alive')!
 const roster = document.querySelector<HTMLElement>('#roster')!
 const roomField = document.querySelector<HTMLElement>('#room-field')!
 const roomInput = document.querySelector<HTMLInputElement>('#room-name')!
-const castOpen = document.querySelector<HTMLButtonElement>('#cast-open')!
 const status = document.querySelector<HTMLElement>('#status')!
+const profileOpen = document.querySelector<HTMLButtonElement>('#profile-open')!
+const mapsOpen = document.querySelector<HTMLButtonElement>('#maps-open')!
+const editorEl = document.querySelector<HTMLElement>('#editor')!
+const profilePanel = document.querySelector<HTMLElement>('#profile')!
+const profileFace = document.querySelector<HTMLCanvasElement>('#profile-face')!
+const profileName = document.querySelector<HTMLElement>('#profile-name')!
+const profileMail = document.querySelector<HTMLElement>('#profile-mail')!
+const profileCoins = document.querySelector<HTMLElement>('#profile-coins')!
 const lobby = document.querySelector<HTMLElement>('#lobby')!
 const desk = document.querySelector<HTMLElement>('#desk')!
 const entering = document.querySelector<HTMLElement>('#entering')!
@@ -39,7 +47,12 @@ const result = document.querySelector<HTMLElement>('#result')!
 const resultKicker = document.querySelector<HTMLElement>('#result-kicker')!
 const resultTitle = document.querySelector<HTMLElement>('#result-title')!
 const resultNames = document.querySelector<HTMLElement>('#result-names')!
-const again = document.querySelector<HTMLButtonElement>('#again')!
+const resultWait = document.querySelector<HTMLElement>('#result-wait')!
+const card = document.querySelector<HTMLElement>('#card')!
+const cardFace = document.querySelector<HTMLCanvasElement>('#card-face')!
+const cardRole = document.querySelector<HTMLElement>('#card-role')!
+const cardName = document.querySelector<HTMLElement>('#card-name')!
+const cardStats = document.querySelector<HTMLElement>('#card-stats')!
 const feed = document.querySelector<HTMLElement>('#feed')!
 const gate = document.querySelector<HTMLElement>('#gate')!
 const shamanName = document.querySelector<HTMLElement>('#shaman-name')!
@@ -49,25 +62,31 @@ const powerTip = document.querySelector<HTMLElement>('#power-tip')!
 const manaFill = document.querySelector<HTMLElement>('#mana-fill')!
 const manaLabel = document.querySelector<HTMLElement>('#mana-label')!
 const notice = document.querySelector<HTMLElement>('#notice')!
-const cast = document.querySelector<HTMLElement>('#cast')!
 const chatLog = document.querySelector<HTMLElement>('#chat-log')!
 const chatText = document.querySelector<HTMLInputElement>('#chat-text')!
+const coinsLabel = document.querySelector<HTMLElement>('#coins')!
+const shopList = document.querySelector<HTMLElement>('#shop-list')!
 
 const savedRoom = localStorage.getItem(ROOM_KEY)
 if (savedRoom) roomInput.value = savedRoom
 
 let net: Net
 let registering = true
-let profile: { nickname: string; email: string; characterId: string } | null = null
-let wantCharacter = 'lume'
-let pickedByUser = false
+let profile: { nickname: string; email: string } | null = null
+let wallet: WalletView = { coins: 0, owned: [], equipped: [] }
+let loggingOut = false
+let droppedToken = ''
+let editing = false
+let practicing = false
+let pendingTest = false
+let awaitingTest = false
+let shownGear = ''
 let lastPhase = ''
 let valendoUntil = 0
 let noticeUntil = 0
 let shamanOutcome: { killerId: string | null; cause: 'killed' | 'self' | 'disconnect' } | null = null
 
-buildCast(document.querySelector('#cast-grid')!)
-buildCast(document.querySelector('#cast-live')!)
+buildShop()
 buildPowers()
 setAuthMode(true)
 
@@ -78,6 +97,7 @@ desk.addEventListener('submit', (event) => {
   event.preventDefault()
   unlockAudio()
   clearError()
+  loggingOut = false
   if (registering) {
     if (password.value !== confirm.value) {
       showError('As senhas não coincidem')
@@ -102,16 +122,46 @@ roomInput.addEventListener('keydown', (event) => {
 })
 roomInput.addEventListener('blur', () => commitRoom())
 
-castOpen.addEventListener('click', () => {
-  cast.hidden = false
+profileOpen.addEventListener('click', () => {
+  releaseKeys()
+  profilePanel.hidden = !profilePanel.hidden
+  profileOpen.classList.toggle('on', !profilePanel.hidden)
 })
-document.querySelector('#cast-close')!.addEventListener('click', () => {
-  cast.hidden = true
+document.querySelector('#profile-close')!.addEventListener('click', () => {
+  profilePanel.hidden = true
+  profileOpen.classList.remove('on')
+})
+document.querySelector('#logout')!.addEventListener('click', () => logout())
+
+mapsOpen.addEventListener('click', () => {
+  if (!profile) return
+  editing = true
+  practicing = false
+  releaseKeys()
+  profilePanel.hidden = true
+  profileOpen.classList.remove('on')
+  if (bridge.youId) net.send({ action: 'LEAVE' })
+  net.send({ action: 'MAPS' })
+  render()
 })
 
-again.addEventListener('click', () => {
-  unlockAudio()
-  net.send({ action: 'START' })
+const editor = mountEditor({
+  save(draft) {
+    pendingTest = false
+    net.send({ action: 'SAVE_MAP', ...draft })
+  },
+  test(draft) {
+    pendingTest = true
+    net.send({ action: 'SAVE_MAP', ...draft })
+  },
+  close() {
+    editing = false
+    practicing = false
+    pendingTest = false
+    awaitingTest = false
+    enterRoom()
+    render()
+  },
 })
 
 document.querySelector('#chat')!.addEventListener('submit', (event) => {
@@ -154,6 +204,7 @@ bridge.castBlock = (c, r) => {
     holes: snap.holes ?? [],
     marks: snap.marks ?? [],
     exit: bridge.match?.exit ?? null,
+    bodies: snap.players,
     caster: me,
     phase: snap.phase,
     power,
@@ -167,6 +218,18 @@ bridge.castBlock = (c, r) => {
   net.send({ action: 'POWER', power, c, r })
 }
 
+bridge.inspect = (playerId) => {
+  if (!bridge.match) return
+  net.send({ action: 'INSPECT', playerId })
+}
+
+document.querySelector('#card-close')!.addEventListener('click', () => {
+  card.hidden = true
+})
+card.addEventListener('click', (event) => {
+  if (event.target === card) card.hidden = true
+})
+
 bindInput(
   () => net.send({ action: 'DIG' }),
   () => {
@@ -174,8 +237,14 @@ bindInput(
     net.send({ action: 'INPUT', ...readInput() })
   },
   () => {
+    if (!card.hidden) {
+      card.hidden = true
+      return
+    }
     bridge.selectedPower = null
     paintPowers()
+    profilePanel.hidden = true
+    profileOpen.classList.remove('on')
   },
 )
 
@@ -189,19 +258,16 @@ mountGame()
 
 function onMessage(message: ServerMessage): void {
   if (message.action === 'SESSION') {
+    if (loggingOut || message.token === droppedToken) return
     if (message.token) localStorage.setItem(TOKEN_KEY, message.token)
-    profile = { nickname: message.nickname, email: message.email, characterId: message.characterId }
+    profile = { nickname: message.nickname, email: message.email }
+    applyWallet(message)
     clearError()
-    if (!pickedByUser) wantCharacter = message.characterId
-    if (wantCharacter !== message.characterId) {
-      net.send({ action: 'CHARACTER', id: wantCharacter })
-      render()
-      return
-    }
-    wantCharacter = message.characterId
-    paintPick()
-    if (!bridge.youId) enterRoom()
+    if (!bridge.youId && !editing) enterRoom()
+  } else if (message.action === 'WALLET') {
+    applyWallet(message)
   } else if (message.action === 'LOBBY') {
+    if (practicing || awaitingTest || editing) return
     bridge.hostId = message.hostId
     bridge.code = message.code
     if (document.activeElement !== roomInput) roomInput.value = message.code
@@ -212,6 +278,10 @@ function onMessage(message: ServerMessage): void {
     bridge.speech.push({ playerId: message.playerId, text: message.text, until: performance.now() + 4500 })
     pushChat(message.name, message.text)
   } else if (message.action === 'NOTICE') {
+    if (awaitingTest || pendingTest) {
+      awaitingTest = false
+      pendingTest = false
+    }
     showNotice(message.text)
   } else if (message.action === 'ERROR') {
     showError(message.message)
@@ -221,19 +291,51 @@ function onMessage(message: ServerMessage): void {
     bridge.snap = null
     bridge.youId = ''
     bridge.code = ''
+  } else if (message.action === 'LOGGED_OUT') {
+    loggingOut = false
+    clearAccount()
+  } else if (message.action === 'MAP_LIST') {
+    editor.setMaps(message.maps)
+  } else if (message.action === 'MAP_SAVED') {
+    editor.saved(message.map)
+    if (pendingTest) {
+      pendingTest = false
+      awaitingTest = true
+      net.send({ action: 'TEST_MAP', id: message.map.id })
+    }
+  } else if (message.action === 'MAP_RESULT') {
+    practicing = false
+    awaitingTest = false
+    pendingTest = false
+    editing = true
+    editor.mark(message.id, message.status)
+    editor.banner(message.text)
+    releaseKeys()
+    if (bridge.youId) net.send({ action: 'LEAVE' })
   } else if (message.action === 'MATCH') {
+    if (awaitingTest) {
+      awaitingTest = false
+      practicing = true
+      editing = false
+    }
     bridge.match = message
+    bridge.snap = null
     bridge.youId = message.youId
     bridge.code = message.code
     lastPhase = ''
     shamanOutcome = null
     bridge.selectedPower = null
+    card.hidden = true
     clearFeed()
     refreshGame()
   } else if (message.action === 'SNAP') {
     if (bridge.match && message.serial !== bridge.match.serial) return
     const previous = lastPhase
+    const previousTime = bridge.snap?.timeLeftMs ?? bridge.match?.timeLeftMs ?? 0
     bridge.snap = message
+    if (previousTime > DOOR_RUSH_MS && message.timeLeftMs <= DOOR_RUSH_MS && message.events.some((event) => event.type === 'escaped')) {
+      pushFeed('30 segundos para a porta')
+    }
     if (previous === 'countdown' && message.phase === 'playing') {
       valendoUntil = performance.now() + 700
       playGo()
@@ -243,11 +345,14 @@ function onMessage(message: ServerMessage): void {
     }
     lastPhase = message.phase
     for (const event of message.events) handleEvent(event)
+  } else if (message.action === 'CARD') {
+    paintCard(message)
   }
   render()
 }
 
 function enterRoom(): void {
+  if (editing) return
   const room = roomInput.value.trim() || 'Galeria'
   roomInput.value = room
   net.send({ action: 'ENTER', room })
@@ -262,6 +367,10 @@ function commitRoom(): void {
 }
 
 function handleEvent(event: Extract<ServerMessage, { action: 'SNAP' }>['events'][number]): void {
+  if (event.type === 'door-held' && event.playerId === bridge.youId) {
+    showNotice('A porta abre quando não restar outro jogador.')
+    playDeny()
+  }
   if (event.type === 'escaped') {
     const name = bridge.snap?.players.find((player) => player.id === event.playerId)?.name ?? 'Alguém'
     pushFeed(`${name} saiu pela porta`)
@@ -286,17 +395,24 @@ function handleEvent(event: Extract<ServerMessage, { action: 'SNAP' }>['events']
 function render(): void {
   const snap = bridge.snap
   const inMatch = !!bridge.match
-  lobby.hidden = inMatch
+  lobby.hidden = inMatch || editing
+  editorEl.hidden = !editing
   desk.hidden = !!profile
   entering.hidden = !profile || inMatch
   roomField.hidden = !profile
-  castOpen.hidden = !profile
   chatText.disabled = !bridge.youId
+  paintProfile()
 
   const phase = inMatch ? (snap?.phase ?? bridge.match?.phase ?? 'countdown') : ''
-  setArmed(inMatch && (phase === 'playing' || phase === 'countdown') && document.activeElement !== chatText && document.activeElement !== roomInput)
+  setArmed(inMatch && !editing && (phase === 'playing' || phase === 'countdown') && document.activeElement !== chatText && document.activeElement !== roomInput)
 
   levelName.textContent = bridge.match?.mapName ?? ''
+  const author = bridge.match?.authorName ?? ''
+  if (inMatch && author) {
+    const by = document.createElement('small')
+    by.textContent = `por ${author}`
+    levelName.append(by)
+  }
   const ms = snap?.timeLeftMs ?? bridge.match?.timeLeftMs ?? 180000
   timer.textContent = formatTime(ms)
   timer.classList.toggle('warn', inMatch && ms <= 30000)
@@ -310,6 +426,11 @@ function render(): void {
     roster.replaceChildren()
     announce.hidden = true
     result.hidden = true
+    card.hidden = true
+    if (editing) {
+      timer.textContent = ''
+      levelName.textContent = 'mapas'
+    }
     return
   }
 
@@ -340,7 +461,7 @@ function render(): void {
   const showValendo = performance.now() < valendoUntil && phase === 'playing'
   if (phase === 'countdown') {
     announce.hidden = false
-    announce.textContent = String(Math.max(1, Math.ceil((snap?.countdownMs ?? 3000) / 1000)))
+    announce.textContent = String(Math.max(1, Math.ceil((snap?.countdownMs ?? bridge.match?.countdownMs ?? 3000) / 1000)))
   } else if (showValendo) {
     announce.hidden = false
     announce.textContent = 'VALENDO'
@@ -348,11 +469,16 @@ function render(): void {
     announce.hidden = true
   }
 
-  if (phase === 'finished' && snap?.result) {
+  const leftByDoor = players.some((player) => snap?.result?.winnerIds.includes(player.id) && player.escaped)
+  if (phase === 'finished' && snap?.result && !leftByDoor && !practicing && !editing) {
     const names = snap.result.winnerIds
       .map((id) => players.find((player) => player.id === id)?.name ?? id)
       .join(', ')
     result.hidden = false
+    card.hidden = true
+    profilePanel.hidden = true
+    profileOpen.classList.remove('on')
+    for (const button of result.querySelectorAll('button')) button.remove()
     if (shamanOutcome?.cause === 'killed' && shamanOutcome.killerId) {
       const killer = players.find((player) => player.id === shamanOutcome?.killerId)?.name ?? 'Alguém'
       resultKicker.textContent = 'o shaman caiu'
@@ -362,10 +488,6 @@ function render(): void {
       resultKicker.textContent = 'o shaman caiu'
       resultTitle.textContent = 'SEM UM RESPONSÁVEL'
       resultNames.textContent = 'O próximo Shaman será sorteado.'
-    } else if (players.some((player) => snap.result?.winnerIds.includes(player.id) && player.escaped)) {
-      resultKicker.textContent = 'a porta'
-      resultTitle.textContent = snap.result.winnerIds.length === 1 ? `${names} saiu` : 'SAÍRAM'
-      resultNames.textContent = names
     } else if (snap.result.winnerIds.length === 1 && !snap.result.tie) {
       resultKicker.textContent = snap.result.winnerIds[0] === bridge.youId ? 'você ficou de pé' : 'último de pé'
       resultTitle.textContent = names
@@ -376,13 +498,142 @@ function render(): void {
       resultKicker.textContent = 'o tempo acabou'
       resultTitle.textContent = 'EMPATE'
     }
-    const leftByDoor = players.some((player) => snap.result?.winnerIds.includes(player.id) && player.escaped)
-    if (!shamanOutcome && !leftByDoor) resultNames.textContent = snap.result.tie && names ? names : ''
+    if (!shamanOutcome) resultNames.textContent = snap.result.tie && names ? names : ''
     const livingShaman = players.find((player) => player.role === 'shaman' && player.alive)
-    if (!shamanOutcome && !leftByDoor && livingShaman) resultNames.textContent = `${livingShaman.name} continua como Shaman.`
-    again.hidden = false
+    if (!shamanOutcome && livingShaman) resultNames.textContent = `${livingShaman.name} continua como Shaman.`
+    const wait = snap?.restartInMs ?? 0
+    resultWait.textContent = wait > 0 ? `A próxima rodada começa em ${Math.max(1, Math.ceil(wait / 1000))} s` : 'A próxima rodada começa para todos.'
   } else {
     result.hidden = true
+  }
+}
+
+function paintCard(message: Extract<ServerMessage, { action: 'CARD' }>): void {
+  card.hidden = false
+  cardRole.textContent = message.role === 'shaman' ? 'shaman' : 'operador'
+  cardName.textContent = message.name
+  const rows: [string, number][] = [
+    ['Partidas', message.rounds],
+    ['Saídas pela porta', message.escapes],
+    ['Vitórias', message.wins],
+    ['Quedas', message.falls],
+    ['Vezes como Shaman', message.shamanRounds],
+    ['Moedas', message.coins],
+  ]
+  cardStats.replaceChildren(
+    ...rows.map(([label, value]) => {
+      const item = document.createElement('li')
+      const name = document.createElement('span')
+      name.textContent = label
+      const count = document.createElement('b')
+      count.textContent = String(value)
+      item.append(name, count)
+      return item
+    }),
+  )
+  drawPortrait(cardFace, message.gear, 4)
+}
+
+function paintProfile(): void {
+  profileOpen.hidden = !profile
+  mapsOpen.hidden = !profile
+  mapsOpen.classList.toggle('on', editing)
+  profileOpen.textContent = profile?.nickname ?? 'perfil'
+  profileOpen.classList.toggle('on', !!profile && !profilePanel.hidden)
+  if (!profile) {
+    profilePanel.hidden = true
+    return
+  }
+  profileName.textContent = profile.nickname
+  profileMail.textContent = profile.email
+  profileCoins.textContent = `${wallet.coins} moeda${wallet.coins === 1 ? '' : 's'}`
+  const gearKey = wallet.equipped.slice().sort().join('+')
+  if (gearKey !== shownGear) {
+    shownGear = gearKey
+    drawPortrait(profileFace, wallet.equipped, 4)
+  }
+}
+
+function logout(): void {
+  droppedToken = localStorage.getItem(TOKEN_KEY) ?? droppedToken
+  loggingOut = true
+  localStorage.removeItem(TOKEN_KEY)
+  releaseKeys()
+  net.send({ action: 'LOGOUT' })
+  clearAccount()
+}
+
+function clearAccount(): void {
+  profile = null
+  wallet = { coins: 0, owned: [], equipped: [] }
+  shownGear = ''
+  editing = false
+  practicing = false
+  pendingTest = false
+  awaitingTest = false
+  bridge.youId = ''
+  bridge.hostId = ''
+  bridge.match = null
+  bridge.snap = null
+  bridge.code = ''
+  bridge.selectedPower = null
+  password.value = ''
+  confirm.value = ''
+  profilePanel.hidden = true
+  profileOpen.classList.remove('on')
+  chatLog.replaceChildren()
+  paintShop()
+  render()
+}
+
+function applyWallet(next: WalletView): void {
+  wallet = { coins: next.coins, owned: [...next.owned], equipped: [...next.equipped] }
+  paintShop()
+}
+
+function buildShop(): void {
+  shopList.replaceChildren(
+    ...SHOP.map((item) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'goods'
+      button.dataset.id = item.id
+      const canvas = document.createElement('canvas')
+      drawPortrait(canvas, [item.id], 3)
+      const name = document.createElement('b')
+      name.textContent = item.name
+      const meta = document.createElement('span')
+      button.append(canvas, name, meta)
+      button.addEventListener('click', () => {
+        if (button.disabled) return
+        const owned = wallet.owned.includes(item.id)
+        net.send({ action: owned ? 'EQUIP' : 'BUY', id: item.id })
+      })
+      return button
+    }),
+  )
+  paintShop()
+}
+
+function paintShop(): void {
+  coinsLabel.textContent = `${wallet.coins} moeda${wallet.coins === 1 ? '' : 's'}`
+  for (const button of shopList.querySelectorAll<HTMLButtonElement>('.goods')) {
+    const item = SHOP.find((entry) => entry.id === button.dataset.id)
+    if (!item) continue
+    const owned = wallet.owned.includes(item.id)
+    const wearing = wallet.equipped.includes(item.id)
+    const broke = !owned && wallet.coins < item.price
+    button.disabled = broke
+    button.classList.toggle('on', wearing)
+    const meta = button.querySelector('span')
+    if (meta) {
+      meta.textContent = wearing ? 'Equipado' : owned ? 'Equipar' : `${item.price}`
+    }
+    button.title = wearing
+      ? `${item.blurb}\nClique para tirar`
+      : broke
+        ? `${item.blurb}\nMoedas insuficientes`
+        : item.blurb
   }
 }
 
@@ -394,40 +645,6 @@ function setAuthMode(next: boolean): void {
   showRegister.classList.toggle('on', next)
   showLogin.classList.toggle('on', !next)
   password.autocomplete = next ? 'new-password' : 'current-password'
-}
-
-function buildCast(root: HTMLElement): void {
-  root.replaceChildren(
-    ...CHARACTERS.map((character) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'cast-card-btn'
-      button.dataset.id = character.id
-      const canvas = document.createElement('canvas')
-      drawPortrait(canvas, character.id, 4)
-      const name = document.createElement('span')
-      name.textContent = character.name
-      const blurb = document.createElement('small')
-      blurb.textContent = character.blurb
-      button.append(canvas, name, blurb)
-      button.addEventListener('click', () => chooseCharacter(character.id))
-      return button
-    }),
-  )
-}
-
-function chooseCharacter(id: string): void {
-  pickedByUser = true
-  wantCharacter = id
-  paintPick()
-  cast.hidden = true
-  if (profile && profile.characterId !== id) net.send({ action: 'CHARACTER', id })
-}
-
-function paintPick(): void {
-  for (const button of document.querySelectorAll<HTMLButtonElement>('.cast-card-btn')) {
-    button.classList.toggle('on', button.dataset.id === wantCharacter)
-  }
 }
 
 function buildPowers(): void {
@@ -460,18 +677,18 @@ function buildPowers(): void {
   )
 }
 
-function paintPowers(mana = 0, cooldowns?: { block: number; restore: number; fortify: number }): void {
+function paintPowers(mana = 0, cooldowns?: { block: number; restore: number; fortify: number; ladder: number; bar: number }): void {
   const me = bridge.snap?.players.find((player) => player.id === bridge.youId)
   const pool = mana || me?.mana || 0
   const cds = cooldowns ?? me?.powerCooldownMs
   const clamped = Math.max(0, Math.min(SHAMAN_MAX_MANA, pool))
   manaFill.style.width = `${(clamped / SHAMAN_MAX_MANA) * 100}%`
   manaLabel.textContent = `${clamped}/${SHAMAN_MAX_MANA}`
-  let tip = 'Escolha um poder, depois clique no bloco. ESC cancela.'
+  let tip = 'Escolha um poder, depois clique dentro do círculo. ESC cancela.'
   for (const button of powerRow.querySelectorAll<HTMLButtonElement>('.power')) {
     const def = POWER_DEFS.find((item) => item.id === button.dataset.power)
     if (!def) continue
-    const left = cds?.[def.id as 'block' | 'restore' | 'fortify'] ?? 0
+    const left = cds?.[def.id as 'block' | 'restore' | 'fortify' | 'ladder' | 'bar'] ?? 0
     const broke = pool < def.manaCost
     const cooling = left > 0
     button.disabled = broke || cooling
@@ -543,5 +760,4 @@ window.setInterval(() => {
   if (performance.now() < valendoUntil || performance.now() < noticeUntil + 200) render()
 }, 100)
 
-paintPick()
 render()

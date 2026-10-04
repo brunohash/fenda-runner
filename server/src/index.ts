@@ -1,8 +1,11 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import { WS_PORT } from '../../shared/src/config.ts'
 import { parseClientMessage, type ServerMessage } from '../../shared/src/protocol.ts'
-import { loginAccount, registerAccount, setCharacter, userFromToken, type PublicUser } from './accounts.ts'
-import { deleteRoomIfEmpty, roomByName, tickRooms, type Room } from './room.ts'
+import { loginAccount, registerAccount, buyForUser, equipForUser, grantCoins, closeSession, userFromToken, careerOf, recordCareer, type PublicUser } from './accounts.ts'
+import { Room, deleteRoomIfEmpty, dropPractice, roomByName, setCareerRecord, setEscapeReward, tickRooms, trackPractice } from './room.ts'
+import { approveDraft, getDraft, saveDraft, visibleDrafts } from './maps.ts'
+import { draftProblems } from '../../shared/src/draft.ts'
+import { draftToMap } from '../../shared/src/draft.ts'
 
 interface Conn {
   socket: WebSocket
@@ -48,6 +51,19 @@ wss.on('error', (error) => {
 })
 
 console.log(`[fenda] servidor em ws://localhost:${WS_PORT}`)
+
+setEscapeReward((userId, coins) => {
+  const user = grantCoins(userId, coins)
+  if (!user) return
+  for (const conn of conns.values()) {
+    if (conn.user?.id !== userId) continue
+    conn.user = user
+    send(conn.socket, { action: 'NOTICE', text: `Você ganhou ${coins} moedas.` })
+    sendWallet(conn)
+  }
+})
+
+setCareerRecord((notes) => recordCareer(notes))
 
 let last = performance.now()
 let acc = 0
@@ -100,6 +116,14 @@ function route(conn: Conn, message: NonNullable<ReturnType<typeof parseClientMes
     sendSession(conn)
     return
   }
+  if (message.action === 'LOGOUT') {
+    if (conn.token) closeSession(conn.token)
+    leave(conn, false)
+    conn.user = null
+    conn.token = ''
+    send(conn.socket, { action: 'LOGGED_OUT' })
+    return
+  }
   if (!conn.user) return send(conn.socket, { action: 'ERROR', message: 'Entre na sua conta primeiro' })
   if (message.action === 'ENTER') {
     const found = roomByName(message.room)
@@ -113,17 +137,51 @@ function route(conn: Conn, message: NonNullable<ReturnType<typeof parseClientMes
     console.log(`[fenda] ${conn.user.nickname} em ${found.name}`)
     return
   }
-  if (message.action === 'CHARACTER') {
-    const updated = setCharacter(conn.user.id, message.id)
-    if ('error' in updated) return send(conn.socket, { action: 'ERROR', message: updated.error })
+  if (message.action === 'BUY' || message.action === 'EQUIP') {
+    const updated = message.action === 'BUY' ? buyForUser(conn.user.id, message.id) : equipForUser(conn.user.id, message.id)
+    if ('error' in updated) return send(conn.socket, { action: 'NOTICE', text: updated.error })
     conn.user = updated
-    conn.room?.setCharacter(conn.playerId ?? '', updated.characterId)
-    sendSession(conn)
+    if (conn.playerId) conn.room?.setGear(conn.playerId, updated.equipped)
+    sendWallet(conn)
+    return
+  }
+  if (message.action === 'MAPS') {
+    send(conn.socket, { action: 'MAP_LIST', maps: visibleDrafts(conn.user.id) })
+    return
+  }
+  if (message.action === 'SAVE_MAP') {
+    const saved = saveDraft(conn.user, message)
+    if ('error' in saved) return send(conn.socket, { action: 'NOTICE', text: saved.error })
+    send(conn.socket, { action: 'MAP_SAVED', map: { ...saved, mine: true } })
+    send(conn.socket, { action: 'MAP_LIST', maps: visibleDrafts(conn.user.id) })
+    return
+  }
+  if (message.action === 'TEST_MAP') {
+    beginTest(conn, message.id)
     return
   }
   if (!conn.room || !conn.playerId) return
   if (message.action === 'CHAT') {
     conn.room.say(conn.playerId, message.text)
+    return
+  }
+  if (message.action === 'INSPECT') {
+    const view = conn.room.inspect(message.playerId)
+    if (!view) return
+    const account = view.userId ? careerOf(view.userId) : null
+    send(conn.socket, {
+      action: 'CARD',
+      playerId: message.playerId,
+      name: account?.nickname || view.name,
+      gear: view.gear.length ? view.gear : (account?.equipped ?? []),
+      role: view.role,
+      coins: account?.coins ?? 0,
+      rounds: account?.career.rounds ?? 0,
+      escapes: account?.career.escapes ?? 0,
+      wins: account?.career.wins ?? 0,
+      falls: account?.career.falls ?? 0,
+      shamanRounds: account?.career.shamanRounds ?? 0,
+    })
     return
   }
   if (message.action === 'START') {
@@ -147,6 +205,46 @@ function route(conn: Conn, message: NonNullable<ReturnType<typeof parseClientMes
     return
   }
   if (message.action === 'LEAVE') leave(conn, true)
+}
+
+function beginTest(conn: Conn, id: string): void {
+  if (!conn.user) return
+  const draft = getDraft(id)
+  if (!draft || draft.authorId !== conn.user.id) {
+    send(conn.socket, { action: 'NOTICE', text: 'Esse mapa não é seu.' })
+    return
+  }
+  const problem = draftProblems(draft)
+  if (problem) {
+    send(conn.socket, { action: 'NOTICE', text: problem })
+    return
+  }
+  leave(conn, false)
+  const room = new Room('ensaio')
+  room.practiceMap = draftToMap(draft)
+  room.onPractice = (passed) => {
+    dropPractice(room)
+    if (passed) approveDraft(id)
+    const status = passed || getDraft(id)?.status === 'aprovado' ? 'aprovado' : 'reprovado'
+    send(conn.socket, {
+      action: 'MAP_RESULT',
+      id,
+      status,
+      text: passed
+        ? 'Aprovado. O mapa entrou nas fases.'
+        : 'Reprovado. A fase só entra no jogo se você chegar na porta.',
+    })
+    if (conn.user) send(conn.socket, { action: 'MAP_LIST', maps: visibleDrafts(conn.user.id) })
+  }
+  trackPractice(room)
+  const arrived = room.arrive(conn.socket, conn.user)
+  if (typeof arrived === 'string') {
+    dropPractice(room)
+    send(conn.socket, { action: 'NOTICE', text: arrived })
+    return
+  }
+  conn.room = room
+  conn.playerId = arrived.member.id
 }
 
 function silence(socket: WebSocket | null): void {
@@ -185,6 +283,19 @@ function sendSession(conn: Conn): void {
     nickname: conn.user.nickname,
     email: conn.user.email,
     characterId: conn.user.characterId,
+    coins: conn.user.coins,
+    owned: conn.user.owned,
+    equipped: conn.user.equipped,
+  })
+}
+
+function sendWallet(conn: Conn): void {
+  if (!conn.user) return
+  send(conn.socket, {
+    action: 'WALLET',
+    coins: conn.user.coins,
+    owned: conn.user.owned,
+    equipped: conn.user.equipped,
   })
 }
 

@@ -308,7 +308,7 @@ test('escada cai quando o bloco de apoio some', () => {
   tiles[5][5] = Tile.Trava
   tiles[4][5] = Tile.Ladder
   tiles[3][5] = Tile.Ladder
-  const sim = createSim({ id: 't', name: 't', skin: 'copper', width, height, tiles, spawns: [], exit: null }, defaultConfig())
+  const sim = createSim({ id: 't', name: 't', authorName: '', skin: 'copper', width, height, tiles, spawns: [], shamanSpawn: null, exit: null }, defaultConfig())
   sim.phase = 'playing'
   sim.countdownMs = 0
   const digger = createPlayer({ id: 'a', name: 'a', color: '#fff', variant: 0, ...standOn(2, 5), facing: 1 })
@@ -332,6 +332,67 @@ test('escada cai quando o bloco de apoio some', () => {
   assert.equal(sim.map.tiles[4][5], Tile.Ladder)
   frames(sim, 20)
   assert.ok(climber.y > y + 20, `quem estava na escada não caiu: ${climber.y}`)
+})
+
+test('a linha segura, atravessa e solta', () => {
+  const width = 12
+  const height = 14
+  const tiles = Array.from({ length: height }, () => Array<number>(width).fill(Tile.Empty))
+  for (let r = 0; r < height; r++) {
+    tiles[r][0] = Tile.Trava
+    tiles[r][width - 1] = Tile.Trava
+  }
+  for (let c = 0; c < width; c++) tiles[0][c] = Tile.Trava
+  for (let c = 1; c < width - 1; c++) tiles[11][c] = Tile.Placa
+  for (let c = 2; c <= 6; c++) tiles[4][c] = Tile.Bar
+  const sim = createSim({ id: 'y', name: 'y', authorName: '', skin: 'moss', width, height, tiles, spawns: [], shamanSpawn: null, exit: null }, defaultConfig())
+  sim.phase = 'playing'
+  sim.countdownMs = 0
+  const rider = createPlayer({
+    id: 'a',
+    name: 'a',
+    color: '#fff',
+    variant: 0,
+    x: standOn(3, 11).x,
+    y: 4 * TILE_SIZE - 70,
+    facing: 1,
+  })
+  sim.players.push(rider)
+  for (let i = 0; i < 180 && !(rider.onBar && Math.abs(rider.y - 4 * TILE_SIZE) < 1); i++) stepSim(sim, 1000 / 60)
+  assert.equal(rider.onBar, true)
+  assert.ok(Math.abs(rider.y - 4 * TILE_SIZE) < 1, `não grudou na linha: ${rider.y}`)
+  const walker = createPlayer({
+    id: 'b',
+    name: 'b',
+    color: '#fff',
+    variant: 1,
+    x: standOn(4, 11).x,
+    y: 4 * TILE_SIZE,
+    facing: 1,
+  })
+  sim.players.push(walker)
+  frames(sim, 2)
+  assert.equal(walker.onBar, true)
+  walker.controls.right = true
+  for (let i = 0; i < 160 && walker.onBar; i++) stepSim(sim, 1000 / 60)
+  assert.equal(walker.onBar, false)
+  const dropped = walker.y
+  frames(sim, 10)
+  assert.ok(walker.y > dropped + 8, `não caiu no fim da linha: ${walker.y}`)
+  walker.controls.right = false
+  const hung = rider.x
+  rider.controls.right = true
+  frames(sim, 20)
+  assert.ok(rider.x > hung + 40, `não atravessou: ${rider.x}`)
+  assert.equal(rider.onBar, true)
+  rider.controls.right = false
+  rider.controls.down = true
+  frames(sim, 8)
+  rider.controls.down = false
+  frames(sim, 12)
+  assert.equal(rider.onBar, false)
+  assert.ok(rider.y > 4 * TILE_SIZE + 20, `não soltou a linha: ${rider.y}`)
+  assert.equal(rider.alive, true)
 })
 
 if (failed > 0) {

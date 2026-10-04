@@ -1,9 +1,11 @@
 import Phaser from 'phaser'
-import { BUBBLE_MAX_CHARS, PLAYER_H, PLAYER_W, TILE_SIZE } from '@shared/config.ts'
+import { BUBBLE_MAX_CHARS, PLAYER_H, PLAYER_W, SHAMAN_POWER_RANGE, TILE_SIZE } from '@shared/config.ts'
 import { Tile } from '@shared/map.ts'
 import { previewPower } from '@shared/shaman.ts'
 import { inspectDig } from '@shared/sim.ts'
+import { appearanceKey } from '@shared/shop.ts'
 import type { PlayerSnap, TileChange } from '@shared/types.ts'
+import type { RunnerPose } from '@shared/characters.ts'
 import { ensureCharacter, ensureTextures } from '../art.ts'
 import { bridge, type SnapPayload } from '../state.ts'
 
@@ -14,7 +16,16 @@ interface Actor {
   pin: Phaser.GameObjects.Text
   bubble: Phaser.GameObjects.Text
   aura: Phaser.GameObjects.Ellipse
-  characterId: string
+  look: string
+}
+
+function runnerPose(player: PlayerSnap): RunnerPose {
+  if (!player.alive) return 'idle'
+  if (player.onBar) return 'hang'
+  if (player.onLadder) return 'climb'
+  if (!player.onGround) return 'fall'
+  if (Math.abs(player.vx) > 20 && Math.floor(performance.now() / 140) % 2 === 1) return 'step'
+  return 'idle'
 }
 
 interface Bit {
@@ -65,7 +76,13 @@ export class ArenaScene extends Phaser.Scene {
       this.hover = this.cellAt(pointer)
     })
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (!pointer.leftButtonDown() || !bridge.selectedPower) return
+      if (!pointer.leftButtonDown()) return
+      const actorId = this.actorAt(pointer)
+      if (actorId) {
+        bridge.inspect?.(actorId)
+        return
+      }
+      if (!bridge.selectedPower) return
       const cell = this.cellAt(pointer)
       if (!cell || bridge.snap?.phase !== 'playing') return
       const me = bridge.snap.players.find((player) => player.id === bridge.youId)
@@ -83,13 +100,15 @@ export class ArenaScene extends Phaser.Scene {
       this.tick = snap.tick
     }
     this.refreshSpeech()
+    this.refreshPoses()
     this.drawMarker()
     this.stepBits(delta)
     this.pulseReform()
     this.pulseMarks()
     this.pulseDoor()
     this.applyShake()
-    this.input.setDefaultCursor(bridge.selectedPower ? 'crosshair' : 'default')
+    const overActor = this.actorAt(this.input.activePointer)
+    this.input.setDefaultCursor(overActor ? 'pointer' : bridge.selectedPower ? 'crosshair' : 'default')
   }
 
   private rebuild(match: NonNullable<typeof bridge.match>): void {
@@ -114,9 +133,9 @@ export class ArenaScene extends Phaser.Scene {
     this.bits = []
 
     const backdrop = this.add.graphics()
-    backdrop.fillGradientStyle(0x12161d, 0x12161d, 0x4a2418, 0x4a2418, 1, 1, 1, 1)
+    backdrop.fillGradientStyle(0x0c2a6e, 0x0c2a6e, 0x071433, 0x071433, 1, 1, 1, 1)
     backdrop.fillRect(0, 0, this.mapW, this.mapH)
-    backdrop.fillStyle(0xff5a32, 0.16)
+    backdrop.fillStyle(0x4a1028, 0.45)
     backdrop.fillRect(0, this.dangerRow * TILE_SIZE + TILE_SIZE, this.mapW, this.mapH)
     this.world.add(backdrop)
 
@@ -151,7 +170,15 @@ export class ArenaScene extends Phaser.Scene {
       return
     }
     const texture =
-      tile === Tile.Ladder ? 'ladder' : tile === Tile.Trava ? 'trava' : r >= this.dangerRow ? `brick-${this.skin}-risco` : `brick-${this.skin}`
+      tile === Tile.Bar
+        ? 'linha'
+        : tile === Tile.Ladder
+          ? 'ladder'
+          : tile === Tile.Trava
+            ? 'trava'
+            : r >= this.dangerRow
+              ? `brick-${this.skin}-risco`
+              : `brick-${this.skin}`
     let image = this.tileImages.get(key)
     if (!image) {
       image = this.add.image(c * TILE_SIZE, r * TILE_SIZE, texture).setOrigin(0, 0)
@@ -206,7 +233,10 @@ export class ArenaScene extends Phaser.Scene {
     for (const player of players) {
       seen.add(player.id)
       let actor = this.actors.get(player.id)
-      const key = ensureCharacter(this, player.characterId || 'lume')
+      const gear = player.gear ?? []
+      const pose = runnerPose(player)
+      const look = `${appearanceKey(gear)}:${pose}`
+      const key = ensureCharacter(this, gear, pose)
       if (!actor) {
         const root = this.add.container(player.x, player.y)
         root.setDepth(10)
@@ -243,11 +273,11 @@ export class ArenaScene extends Phaser.Scene {
           .setVisible(false)
         root.add([aura, shadow, sprite, label, pin, bubble])
         this.world.add(root)
-        actor = { root, sprite, label, pin, bubble, aura, characterId: player.characterId }
+        actor = { root, sprite, label, pin, bubble, aura, look }
         this.actors.set(player.id, actor)
       }
-      if (actor.characterId !== player.characterId) {
-        actor.characterId = player.characterId
+      if (actor.look !== look) {
+        actor.look = look
         actor.sprite.setTexture(key)
         actor.sprite.setDisplaySize(PLAYER_W, PLAYER_H)
       }
@@ -271,6 +301,22 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  private refreshPoses(): void {
+    const players = bridge.snap?.players
+    if (!players) return
+    for (const player of players) {
+      const actor = this.actors.get(player.id)
+      if (!actor) continue
+      const gear = player.gear ?? []
+      const pose = runnerPose(player)
+      const look = `${appearanceKey(gear)}:${pose}`
+      if (actor.look === look) continue
+      actor.look = look
+      actor.sprite.setTexture(ensureCharacter(this, gear, pose))
+      actor.sprite.setDisplaySize(PLAYER_W, PLAYER_H)
+    }
+  }
+
   private refreshSpeech(): void {
     const now = performance.now()
     for (const actor of this.actors.values()) {
@@ -289,9 +335,11 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.marker) return
     this.marker.clear()
     const snap = bridge.snap
-    if (!snap || snap.phase !== 'playing') return
+    if (!snap) return
     const me = snap.players.find((player) => player.id === this.youId)
     if (!me?.alive || !this.tiles.length) return
+    if (me.role === 'shaman' && (snap.phase === 'playing' || snap.phase === 'countdown')) this.drawReach(me)
+    if (snap.phase !== 'playing') return
     const look = inspectDig(me, { width: this.width, height: this.height, tiles: this.tiles }, me.digCooldownMs, snap.phase)
     if (
       look.c !== undefined &&
@@ -308,6 +356,7 @@ export class ArenaScene extends Phaser.Scene {
       holes: snap.holes ?? [],
       marks: snap.marks ?? [],
       exit: bridge.match?.exit ?? null,
+      bodies: snap.players,
       caster: me,
       phase: snap.phase,
       power: bridge.selectedPower,
@@ -316,6 +365,16 @@ export class ArenaScene extends Phaser.Scene {
     })
     this.marker.lineStyle(2, reason ? 0xff3344 : 0x9dff6a, 0.95)
     this.marker.strokeRect(this.hover.c * TILE_SIZE + 3, this.hover.r * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6)
+  }
+
+  private drawReach(me: PlayerSnap): void {
+    const actor = this.actors.get(me.id)
+    const x = (actor?.root.x ?? me.x) + PLAYER_W / 2
+    const y = (actor?.root.y ?? me.y) + PLAYER_H / 2
+    this.marker.fillStyle(0xffe14a, 0.08)
+    this.marker.fillCircle(x, y, SHAMAN_POWER_RANGE)
+    this.marker.lineStyle(2, 0xffe14a, 0.85)
+    this.marker.strokeCircle(x, y, SHAMAN_POWER_RANGE)
   }
 
   private cellAt(pointer: Phaser.Input.Pointer): { c: number; r: number } | null {
@@ -383,6 +442,18 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.reforming.size) return
     const alpha = 0.35 + Math.sin(this.time.now / 140) * 0.18
     for (const key of this.reforming) this.tileImages.get(key)?.setAlpha(alpha)
+  }
+
+  private actorAt(pointer: Phaser.Input.Pointer): string | null {
+    if (!this.world) return null
+    const point = this.world.getLocalPoint(pointer.x, pointer.y)
+    let found: string | null = null
+    for (const [id, actor] of this.actors) {
+      const x = actor.root.x
+      const y = actor.root.y
+      if (point.x >= x && point.x <= x + PLAYER_W && point.y >= y - 18 && point.y <= y + PLAYER_H) found = id
+    }
+    return found
   }
 
   private layout(): void {

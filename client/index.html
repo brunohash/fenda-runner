@@ -25,31 +25,60 @@
         Sala
         <input id="room-name" maxlength="24" spellcheck="false" autocomplete="off" value="Galeria" />
       </label>
-      <button type="button" id="cast-open" class="ghost" hidden>Personagem</button>
+      <button type="button" id="maps-open" class="ghost" hidden>Mapas</button>
+      <button type="button" id="profile-open" class="ghost" hidden>perfil</button>
       <div id="status" class="status">conectando</div>
     </header>
     <main>
       <div id="game"></div>
+      <section id="editor" hidden>
+        <div class="editor-bar">
+          <p class="kicker">mapas</p>
+          <input id="editor-name" maxlength="24" spellcheck="false" autocomplete="off" placeholder="Nome da fase" />
+          <span id="editor-state" class="badge">reprovado</span>
+          <button type="button" id="editor-new">Novo</button>
+          <button type="button" id="editor-save">Salvar</button>
+          <button type="button" id="editor-test">Testar</button>
+          <button type="button" id="editor-close" class="ghost">Voltar à sala</button>
+        </div>
+        <p id="editor-note">A borda e o vão de baixo são fixos. Linha é a barra para atravessar pendurado. Nascer marca onde a pessoa aparece, no vão em cima do chão. Shaman marca onde ele começa, se for diferente. Só dá para alterar um mapa que você criou.</p>
+        <p id="editor-banner"></p>
+        <div class="editor-body">
+          <div id="editor-tools"></div>
+          <div id="editor-grid"></div>
+          <ul id="editor-maps"></ul>
+        </div>
+      </section>
       <section id="lobby">
-        <div class="intro">
-          <p class="kicker">depósito suspenso · até 10 operadores</p>
+        <div class="title-board">
+          <div class="stage" aria-hidden="true">
+            <div class="gallery-door"></div>
+            <div class="gallery-porch"></div>
+            <div class="gallery-ladder"></div>
+            <div class="gallery-floor gallery-floor-a"><i></i><i></i><i></i><i class="gap"></i><i></i><i class="stone"></i></div>
+            <div class="gallery-floor gallery-floor-b"><i></i><i class="stone"></i><i></i><i></i><i class="gap"></i><i></i></div>
+          </div>
+          <p class="kicker">corrida até a porta · 10 operadores</p>
           <h1>FENDA</h1>
           <p class="lead">
             Três minutos para chegar na porta, no alto do mapa. Cavar abre atalho e também derruba
-            quem vem atrás. O corte não acerta o painel sob os pés.
+            quem vem atrás.
           </p>
-          <div class="teach" aria-hidden="true">
-            <div class="runner"></div>
-            <div class="plates">
-              <i></i><i></i><i class="target"></i><i></i><i></i>
-            </div>
-          </div>
-          <p class="note">A porta fica em cima, sobre blocos que não se quebram. Cair no vão de baixo elimina.</p>
+          <ul class="brief">
+            <li><b>01</b> Suba por escadas e plataformas</li>
+            <li><b>02</b> Cave atalhos na diagonal</li>
+            <li><b>03</b> O Shaman restaura, reforça ou abre o chão</li>
+          </ul>
         </div>
         <form id="desk" class="desk">
+          <div class="desk-head">
+            <p class="kicker">acesso</p>
+            <h2 class="when-reg">Criar conta</h2>
+            <h2 class="when-login">Entrar na galeria</h2>
+          </div>
           <div class="auth-switch">
-            <button type="button" id="show-register" class="ghost">Criar conta</button>
-            <button type="button" id="show-login" class="ghost">Já tenho conta</button>
+            <button type="button" id="show-register">Criar conta</button>
+            <button type="button" id="show-login">Já tenho conta</button>
           </div>
           <label id="nick-field">
             Apelido
@@ -61,18 +90,16 @@
           </label>
           <label>
             Senha
-            <input id="password" name="password" type="password" maxlength="72" autocomplete="new-password" />
+            <input id="password" name="password" type="password" maxlength="72" autocomplete="new-password" placeholder="••••••••" />
           </label>
           <label id="confirm-field">
             Confirmar senha
-            <input id="confirm" name="confirm" type="password" maxlength="72" autocomplete="new-password" />
+            <input id="confirm" name="confirm" type="password" maxlength="72" autocomplete="new-password" placeholder="••••••••" />
           </label>
-          <p class="note">Escolha quem vai descer na galeria. Dá para trocar depois.</p>
-          <div id="cast-grid" class="cast-grid"></div>
           <button type="submit" id="auth-submit">Criar conta e entrar</button>
           <p id="error" class="error" hidden></p>
         </form>
-        <p id="entering" class="lead" hidden>Entrando na sala…</p>
+        <p id="entering" class="entering" hidden>Entrando na sala…</p>
       </section>
       <div id="announce" hidden></div>
       <div id="result" hidden>
@@ -80,21 +107,21 @@
           <p id="result-kicker"></p>
           <h2 id="result-title"></h2>
           <p id="result-names"></p>
-          <button type="button" id="again">Nova partida</button>
+          <p id="result-wait"></p>
         </div>
       </div>
       <ul id="feed"></ul>
       <p id="notice" hidden></p>
-      <section id="cast" hidden>
-        <div class="cast-card">
-          <p class="kicker">operadores</p>
-          <h2>Escolha o personagem</h2>
-          <div id="cast-live" class="cast-grid"></div>
-          <button type="button" id="cast-close" class="ghost">Fechar</button>
-        </div>
-      </section>
     </main>
-    <div class="dock">
+    <aside class="rail">
+      <section id="shop" class="shop">
+        <div class="shop-head">
+          <p class="kicker">loja</p>
+          <p id="coins">0 moedas</p>
+        </div>
+        <p class="note">Sair pela porta rende 25 moedas. O item entra no operador na hora.</p>
+        <div id="shop-list"></div>
+      </section>
       <form id="chat" class="chat">
         <ul id="chat-log"></ul>
         <input id="chat-text" maxlength="48" autocomplete="off" spellcheck="true" placeholder="Falar na sala" disabled />
@@ -104,17 +131,36 @@
         <div id="power-row"></div>
         <div class="mana"><span id="mana-fill"></span></div>
         <p id="mana-label">100/100</p>
-        <p id="power-tip">Escolha um poder, depois clique no bloco.</p>
+        <p id="power-tip">Escolha um poder, depois clique dentro do círculo.</p>
       </aside>
-    </div>
+    </aside>
     <footer>
       <span>A D ← → mover</span>
       <span>W ↑ subir</span>
       <span>S ↓ cavar</span>
       <span>X cava sem descer</span>
       <span>na escada, ↑ sobe e ↓ desce; sem comando, cai</span>
-      <span>Shaman: poder, depois o bloco · ESC cancela</span>
+      <span>na linha, ← → atravessa e ↓ solta</span>
+      <span>Shaman: poder, depois o alvo no círculo · ESC cancela</span>
     </footer>
+    <section id="card" class="card" hidden>
+      <div class="card-sheet">
+        <canvas id="card-face"></canvas>
+        <p id="card-role" class="kicker"></p>
+        <h2 id="card-name"></h2>
+        <ul id="card-stats"></ul>
+        <button type="button" id="card-close" class="ghost">Fechar</button>
+      </div>
+    </section>
+    <section id="profile" class="profile" hidden>
+      <p class="kicker">perfil</p>
+      <canvas id="profile-face"></canvas>
+      <h2 id="profile-name"></h2>
+      <p id="profile-mail"></p>
+      <p id="profile-coins"></p>
+      <button type="button" id="logout">Sair da conta</button>
+      <button type="button" id="profile-close" class="ghost">Fechar</button>
+    </section>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
